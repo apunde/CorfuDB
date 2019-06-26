@@ -155,7 +155,7 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
         underlyingObject = new VersionLockedObject<T>(this::getNewInstance,
                 new StreamViewSMRAdapter(rt, rt.getStreamsView().getUnsafe(streamID)),
                 upcallTargetMap, undoRecordTargetMap, undoTargetMap,
-                garbageFunctionMap, resetSet, garbageInformer);
+                garbageFunctionMap, resetSet, garbageInformer, rt);
 
         metrics = CorfuRuntime.getDefaultMetrics();
         mpObj = CorfuComponent.OBJECT.toString();
@@ -208,6 +208,7 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
             } catch (TrimmedException te) {
                 log.warn("accessInner: Encountered a trim exception while accessing version {} on attempt {}",
                         timestamp, x);
+
                 // We encountered a TRIM during sync, reset the object
                 underlyingObject.update(o -> {
                     o.resetUnsafe();
