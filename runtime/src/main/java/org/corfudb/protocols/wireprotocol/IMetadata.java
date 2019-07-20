@@ -47,7 +47,7 @@ public interface IMetadata {
      */
     @SuppressWarnings("unchecked")
     default Set<UUID> getStreams() {
-        return (Set<UUID>) ((Map<UUID, Long>)getMetadataMap().getOrDefault(
+        return ((Map<UUID, Long>)getMetadataMap().getOrDefault(
                 LogUnitMetadataType.BACKPOINTER_MAP, Collections.emptyMap())).keySet();
     }
 
