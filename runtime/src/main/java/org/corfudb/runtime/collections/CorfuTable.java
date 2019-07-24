@@ -440,12 +440,9 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     @Override
     @Mutator(name = "put", noUpcall = true)
     public void insert(@ConflictParameter K key, V value) {
-        V previous = mainMap.put(key, value);
-        // If we have index functions, update the secondary indexes.
-        if (!secondaryIndexes.isEmpty()) {
-            unmapSecondaryIndexes(key, previous);
-            mapSecondaryIndexes(key, value);
-        }
+        // This is just a stub, the annotation processor will generate an update with
+        // put(key, value), since this method doesn't require an upcall therefore no
+        // operations are needed to be executed on the internal data structure
     }
 
     /**
@@ -507,8 +504,9 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     @Override
     @Mutator(name = "remove", noUpcall = true)
     public void delete(@ConflictParameter K key) {
-        V previous =  mainMap.remove(key);
-        unmapSecondaryIndexes(key, previous);
+        // This is just a stub, the annotation processor will generate an update with
+        // remove(key), since this method doesn't require an upcall therefore no
+        // operations are needed to be executed on the internal data structure
     }
 
     /** {@inheritDoc} */
@@ -711,6 +709,7 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
      * @param key   The primary key (index) for the mapping.
      * @param value The value to unmap.
      */
+    @DontInstrument
     @SuppressWarnings("unchecked")
     protected void unmapSecondaryIndexes(K key, V value) {
         if (value == null) {
@@ -748,6 +747,7 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
      * @param key   the primary key associated with the indexing.
      * @param value the value to map.
      */
+    @DontInstrument
     @SuppressWarnings("unchecked")
     protected void mapSecondaryIndexes(K key, V value) {
         if (value == null) {
@@ -780,6 +780,7 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     /**
      *  Disable all secondary indices for this table. Only used during error-recovery.
      */
+    @DontInstrument
     protected void clearIndex() {
         indexSpec.clear();
         secondaryIndexes.clear();
