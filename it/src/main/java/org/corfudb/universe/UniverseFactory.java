@@ -2,6 +2,7 @@ package org.corfudb.universe;
 
 import com.spotify.docker.client.DockerClient;
 import org.corfudb.universe.logging.LoggingParams;
+import org.corfudb.universe.node.server.docker.DockerParams;
 import org.corfudb.universe.universe.Universe;
 import org.corfudb.universe.universe.UniverseParams;
 import org.corfudb.universe.universe.docker.DockerUniverse;
@@ -34,11 +35,12 @@ public class UniverseFactory {
      * @return a instance of {@link DockerUniverse}
      */
     public DockerUniverse buildDockerUniverse(UniverseParams universeParams, DockerClient docker,
-                                              LoggingParams loggingParams) {
+                                              DockerParams dockerParams, LoggingParams loggingParams) {
         return DockerUniverse.builder()
                 .universeParams(universeParams)
                 .loggingParams(loggingParams)
                 .docker(docker)
+                .dockerParams(dockerParams)
                 .build();
     }
 

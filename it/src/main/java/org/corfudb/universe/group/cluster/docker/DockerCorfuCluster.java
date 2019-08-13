@@ -15,6 +15,7 @@ import org.corfudb.universe.logging.LoggingParams;
 import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.universe.node.server.CorfuServerParams;
 import org.corfudb.universe.node.server.docker.DockerCorfuServer;
+import org.corfudb.universe.node.server.docker.DockerParams;
 import org.corfudb.universe.universe.UniverseParams;
 import org.corfudb.universe.util.DockerManager;
 
@@ -32,13 +33,16 @@ public class DockerCorfuCluster extends AbstractCorfuCluster<CorfuClusterParams,
     private final DockerClient docker;
     @NonNull
     private final LoggingParams loggingParams;
+
+    private final DockerParams dockerParams;
     private final DockerManager dockerManager;
 
     @Builder
-    public DockerCorfuCluster(DockerClient docker, CorfuClusterParams params, UniverseParams universeParams,
+    public DockerCorfuCluster(DockerClient docker, CorfuClusterParams params, DockerParams dockerParams, UniverseParams universeParams,
                               LoggingParams loggingParams) {
         super(params, universeParams);
         this.docker = docker;
+        this.dockerParams = dockerParams;
         this.loggingParams = loggingParams;
         this.dockerManager = DockerManager.builder().docker(docker).build();
     }
@@ -52,6 +56,7 @@ public class DockerCorfuCluster extends AbstractCorfuCluster<CorfuClusterParams,
                 .params(nodeParams)
                 .loggingParams(loggingParams)
                 .docker(docker)
+                .dockerParams(dockerParams)
                 .dockerManager(dockerManager)
                 .build();
     }

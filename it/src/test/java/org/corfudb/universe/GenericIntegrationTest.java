@@ -3,6 +3,7 @@ package org.corfudb.universe;
 import com.spotify.docker.client.DefaultDockerClient;
 import com.spotify.docker.client.DockerClient;
 import org.corfudb.universe.logging.LoggingParams;
+import org.corfudb.universe.node.server.docker.DockerParams;
 import org.corfudb.universe.scenario.Scenario;
 import org.corfudb.universe.scenario.fixture.Fixtures.AbstractUniverseFixture;
 import org.corfudb.universe.scenario.fixture.Fixtures.UniverseFixture;
@@ -54,6 +55,10 @@ public abstract class GenericIntegrationTest {
                 .build();
     }
 
+    public DockerParams getDockerParams() {
+        return DockerParams.builder().build();
+    }
+
     public Scenario getVmScenario(int numNodes) {
         VmUniverseFixture universeFixture = new VmUniverseFixture();
         universeFixture.setNumNodes(numNodes);
@@ -76,7 +81,8 @@ public abstract class GenericIntegrationTest {
         universeFixture.setNumNodes(numNodes);
 
         //Assign universe variable before deploy prevents resources leaks
-        universe = UNIVERSE_FACTORY.buildDockerUniverse(universeFixture.data(), docker, getDockerLoggingParams());
+        universe = UNIVERSE_FACTORY.buildDockerUniverse(universeFixture.data(), docker,
+                getDockerParams(), getDockerLoggingParams());
         universe.deploy();
 
         return Scenario.with(universeFixture);

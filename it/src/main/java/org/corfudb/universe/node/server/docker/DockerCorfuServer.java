@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -57,15 +58,20 @@ public class DockerCorfuServer extends AbstractCorfuServer<CorfuServerParams, Un
     private final LoggingParams loggingParams;
     @NonNull
     private final CorfuClusterParams clusterParams;
+
+    private final DockerParams dockerParams;
+
     private final AtomicReference<String> ipAddress = new AtomicReference<>();
     private final AtomicBoolean destroyed = new AtomicBoolean();
 
     @Builder
     public DockerCorfuServer(DockerClient docker, CorfuServerParams params, UniverseParams universeParams,
-                             CorfuClusterParams clusterParams, LoggingParams loggingParams,
+                             CorfuClusterParams clusterParams, DockerParams dockerParams,
+                             LoggingParams loggingParams,
                              DockerManager dockerManager) {
         super(params, universeParams);
         this.docker = docker;
+        this.dockerParams = dockerParams;
         this.loggingParams = loggingParams;
         this.clusterParams = clusterParams;
         this.dockerManager = dockerManager;
@@ -322,32 +328,58 @@ public class DockerCorfuServer extends AbstractCorfuServer<CorfuServerParams, Un
     }
 
     private ContainerConfig buildContainerConfig() {
+
+        // Image
+        String imageName = Optional.ofNullable(dockerParams.getImageName()).orElse(IMAGE_NAME);
+
+        // Host Name
+        String hostName = Optional.ofNullable(dockerParams.getHostName()).orElse(params.getName());
+
         // Bind ports
         String[] ports = {String.valueOf(params.getPort())};
-        Map<String, List<PortBinding>> portBindings = new HashMap<>();
-        for (String port : ports) {
-            List<PortBinding> hostPorts = new ArrayList<>();
-            hostPorts.add(PortBinding.of(ALL_NETWORK_INTERFACES, port));
-            portBindings.put(port, hostPorts);
+        String[] hostPorts = Optional.ofNullable(dockerParams.getDockerPorts()).orElse(ports);
+
+        if (ports.length != hostPorts.length) {
+            throw new NodeException("Port mappings should be of an equal length: " +
+                    ports.length + " vs " + hostPorts.length);
         }
 
-        HostConfig hostConfig = HostConfig.builder()
-                .privileged(true)
-                .portBindings(portBindings)
-                .build();
+        Map<String, List<PortBinding>> portBindings = new HashMap<>();
+
+        for (int i = 0; i < ports.length; i++) {
+            String port = ports[i];
+            String hostPort = hostPorts[i];
+            List<PortBinding> portsList = new ArrayList<>();
+            portsList.add(PortBinding.of(ALL_NETWORK_INTERFACES, hostPort));
+            portBindings.put(port, portsList);
+        }
+
+        // Configure host
+        HostConfig.Builder hostConfigBuilder = HostConfig.builder()
+                .privileged(Optional.of(dockerParams.isPrivileged()).orElse(true))
+                .portBindings(portBindings);
+
+        // If volume mappings are provided create a subdirectory atomically and increment then bind
+        HostConfig hostConfig = Optional.ofNullable(dockerParams.getVolumeMapping())
+                .map(hostVolumeMapping ->
+                        HostConfig.Bind.from(hostVolumeMapping + "/" +
+                                dockerParams.getServerOrder().getAndAdd(1))
+                                .to(params.getStreamLogDir()).readOnly(false).build())
+                .map(bindings -> hostConfigBuilder.appendBinds(bindings).build())
+                .orElseGet(hostConfigBuilder::build);
 
         // Compose command line for starting Corfu
-        String cmdLine = new StringBuilder()
-                .append("mkdir -p " + params.getStreamLogDir())
-                .append(" && ")
-                .append("java -cp *.jar org.corfudb.infrastructure.CorfuServer ")
-                .append(getCommandLineParams())
-                .toString();
+        String cmdLine = Optional.ofNullable(dockerParams.getCmdLine()).orElseGet(() ->
+                "mkdir -p " + params.getStreamLogDir() +
+                        " && " +
+                        "java -cp *.jar org.corfudb.infrastructure.CorfuServer " +
+                        getCommandLineParams());
 
+        // create container
         return ContainerConfig.builder()
                 .hostConfig(hostConfig)
-                .image(IMAGE_NAME)
-                .hostname(params.getName())
+                .image(imageName)
+                .hostname(hostName)
                 .exposedPorts(ports)
                 .cmd("sh", "-c", cmdLine)
                 .build();

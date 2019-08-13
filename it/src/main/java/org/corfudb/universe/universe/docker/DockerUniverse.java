@@ -9,6 +9,7 @@ import org.corfudb.universe.group.cluster.AbstractCorfuCluster;
 import org.corfudb.universe.group.cluster.CorfuClusterParams;
 import org.corfudb.universe.group.cluster.docker.DockerCorfuCluster;
 import org.corfudb.universe.logging.LoggingParams;
+import org.corfudb.universe.node.server.docker.DockerParams;
 import org.corfudb.universe.universe.AbstractUniverse;
 import org.corfudb.universe.universe.Universe;
 import org.corfudb.universe.universe.UniverseException;
@@ -36,12 +37,14 @@ public class DockerUniverse extends AbstractUniverse<UniverseParams> {
     private final AtomicBoolean initialized = new AtomicBoolean();
     private final LoggingParams loggingParams;
     private final AtomicBoolean destroyed = new AtomicBoolean();
+    private final DockerParams dockerParams;
 
     @Builder
-    public DockerUniverse(UniverseParams universeParams, DockerClient docker, LoggingParams loggingParams) {
+    public DockerUniverse(UniverseParams universeParams, DockerClient docker, DockerParams dockerParams, LoggingParams loggingParams) {
         super(universeParams);
         this.docker = docker;
         this.loggingParams = loggingParams;
+        this.dockerParams = dockerParams;
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
     }
 
@@ -106,6 +109,7 @@ public class DockerUniverse extends AbstractUniverse<UniverseParams> {
                         .params(ClassUtils.cast(groupParams))
                         .loggingParams(loggingParams)
                         .docker(docker)
+                        .dockerParams(dockerParams)
                         .build();
             case CORFU_CLIENT:
                 throw new UniverseException("Not implemented corfu client. Group config: " + groupParams);
