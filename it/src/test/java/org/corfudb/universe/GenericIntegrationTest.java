@@ -19,7 +19,7 @@ import org.junit.Rule;
 import org.junit.rules.TestName;
 
 public abstract class GenericIntegrationTest {
-    private static final UniverseFactory UNIVERSE_FACTORY = UniverseFactory.getInstance();
+    static final UniverseFactory UNIVERSE_FACTORY = UniverseFactory.getInstance();
 
     protected DockerClient docker;
     protected Universe universe;
@@ -33,6 +33,7 @@ public abstract class GenericIntegrationTest {
 
     @After
     public void tearDown() {
+
         if (universe != null) {
             universe.shutdown();
         } else {
@@ -89,7 +90,7 @@ public abstract class GenericIntegrationTest {
     }
 
     public Scenario<UniverseParams, AbstractUniverseFixture<UniverseParams>> getScenario() {
-        final int defaultNumNodes = 3;
+        final int defaultNumNodes = 1;
         return getScenario(defaultNumNodes);
     }
 

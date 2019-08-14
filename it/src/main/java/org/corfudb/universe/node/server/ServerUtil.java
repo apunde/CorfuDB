@@ -12,7 +12,11 @@ public class ServerUtil {
     }
 
     public static int getRandomOpenPort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
+        return getPortIfOpen(0);
+    }
+
+    public static int getPortIfOpen(int portNum) {
+        try (ServerSocket socket = new ServerSocket(portNum)) {
             return socket.getLocalPort();
         } catch (IOException e) {
             throw new NodeException("Can't get any open port", e);

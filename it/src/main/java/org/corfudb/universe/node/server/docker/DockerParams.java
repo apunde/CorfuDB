@@ -31,7 +31,8 @@ public class DockerParams {
     @Getter
     private final String volumeMapping;
 
+    @Default
     @Getter
-    private AtomicInteger serverOrder = new AtomicInteger(0);
+    private final AtomicInteger serverOrder = new AtomicInteger();
 
 }

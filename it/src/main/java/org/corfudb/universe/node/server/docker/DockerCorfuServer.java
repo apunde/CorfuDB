@@ -185,8 +185,8 @@ public class DockerCorfuServer extends AbstractCorfuServer<CorfuServerParams, Un
                 params.getName(), servers);
 
         servers.stream()
-               .filter(neighbourServer -> !neighbourServer.getParams().equals(params))
-               .forEach(neighbourServer -> {
+                .filter(neighbourServer -> !neighbourServer.getParams().equals(params))
+                .forEach(neighbourServer -> {
                     try {
                         dockerManager.execCommand(params.getName(),
                                 IpTablesUtil.dropInput(neighbourServer.getIpAddress()));
@@ -260,8 +260,8 @@ public class DockerCorfuServer extends AbstractCorfuServer<CorfuServerParams, Un
                 params.getName(), servers);
 
         servers.stream()
-               .filter(neighbourServer -> !neighbourServer.getParams().equals(params))
-               .forEach(neighbourServer -> {
+                .filter(neighbourServer -> !neighbourServer.getParams().equals(params))
+                .forEach(neighbourServer -> {
                     try {
                         dockerManager.execCommand(params.getName(),
                                 IpTablesUtil.revertDropInput(neighbourServer.getIpAddress()));
@@ -271,7 +271,7 @@ public class DockerCorfuServer extends AbstractCorfuServer<CorfuServerParams, Un
                         throw new NodeException("Can't reconnect container: " + params.getName() +
                                 " to server: " + neighbourServer.getParams().getName(), ex);
                     }
-               });
+                });
     }
 
     /**
@@ -359,12 +359,14 @@ public class DockerCorfuServer extends AbstractCorfuServer<CorfuServerParams, Un
                 .privileged(Optional.of(dockerParams.isPrivileged()).orElse(true))
                 .portBindings(portBindings);
 
+        String corfuDataDirectory = String.format("/app/%s/corfu", params.getStreamLogDir());
         // If volume mappings are provided create a subdirectory atomically and increment then bind
+
         HostConfig hostConfig = Optional.ofNullable(dockerParams.getVolumeMapping())
                 .map(hostVolumeMapping ->
                         HostConfig.Bind.from(hostVolumeMapping + "/" +
                                 dockerParams.getServerOrder().getAndAdd(1))
-                                .to(params.getStreamLogDir()).readOnly(false).build())
+                                .to(corfuDataDirectory).readOnly(false).build())
                 .map(bindings -> hostConfigBuilder.appendBinds(bindings).build())
                 .orElseGet(hostConfigBuilder::build);
 

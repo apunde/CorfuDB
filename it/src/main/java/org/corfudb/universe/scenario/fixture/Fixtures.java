@@ -1,9 +1,12 @@
 package org.corfudb.universe.scenario.fixture;
 
 import com.google.common.collect.ImmutableList;
+import lombok.Builder;
 import lombok.Data;
+import lombok.Setter;
 import lombok.experimental.Accessors;
 import org.corfudb.universe.group.cluster.CorfuClusterParams;
+import org.corfudb.universe.node.NodeException;
 import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.universe.node.server.CorfuServerParams;
@@ -21,6 +24,8 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
+import java.util.function.IntUnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -54,16 +59,41 @@ public interface Fixtures {
     /**
      * Common configuration for Universe initialization
      */
+    @Accessors(chain = true)
     class UniverseFixture extends AbstractUniverseFixture<UniverseParams> {
         public UniverseParams data;
 
         @Override
         public UniverseParams data() {
-            if (data != null){
+            if (data != null) {
                 return data;
             }
 
             this.servers = FixtureUtil.buildMultipleServers(numNodes, corfuCluster.getName());
+            servers.forEach(corfuCluster::add);
+
+            data = UniverseParams.universeBuilder()
+                    .build()
+                    .add(corfuCluster);
+
+            return data;
+        }
+    }
+
+    /**
+     * Configuration for persistent initialization
+     */
+    class PersistentUniverseFixture extends UniverseFixture {
+        @Setter
+        Integer[] ports;
+
+        @Override
+        public UniverseParams data() {
+            if (data != null) {
+                return data;
+            }
+
+            this.servers = FixtureUtil.buildMultipleServersAndBindToPorts(numNodes, corfuCluster.getName(), ports);
             servers.forEach(corfuCluster::add);
 
             data = UniverseParams.universeBuilder()
@@ -84,7 +114,7 @@ public interface Fixtures {
 
         @Override
         public VmUniverseParams data() {
-            if (data != null){
+            if (data != null) {
                 return data;
             }
 
@@ -143,11 +173,10 @@ public interface Fixtures {
             // prevent instantiation of this class
         }
 
-        static ImmutableList<CorfuServerParams> buildMultipleServers(int numNodes, String clusterName) {
-
+        static ImmutableList<CorfuServerParams> buildServers(int numNodes, String clusterName, IntUnaryOperator portMappingFxn) {
             List<CorfuServerParams> serversParams = IntStream
                     .rangeClosed(1, numNodes)
-                    .map(i -> ServerUtil.getRandomOpenPort())
+                    .map(portMappingFxn)
                     .boxed()
                     .sorted()
                     .map(port -> CorfuServerParams.serverParamsBuilder()
@@ -156,8 +185,19 @@ public interface Fixtures {
                             .build()
                     )
                     .collect(Collectors.toList());
-
             return ImmutableList.copyOf(serversParams);
+        }
+
+        static ImmutableList<CorfuServerParams> buildMultipleServers(int numNodes, String clusterName) {
+            return buildServers(numNodes, clusterName, i -> ServerUtil.getRandomOpenPort());
+        }
+
+        static ImmutableList<CorfuServerParams> buildMultipleServersAndBindToPorts(int numNodes, String clusterName, Integer[] ports) {
+            if (numNodes != ports.length) {
+                throw new NodeException("Number of nodes and ports should be equal");
+            } else {
+                return buildServers(numNodes, clusterName, i -> ports[i - 1]);
+            }
         }
 
         static ImmutableList<CorfuServerParams> buildVmMultipleServers(int numNodes, String clusterName, String vmNamePrefix) {
