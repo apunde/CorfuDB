@@ -5,6 +5,7 @@ import com.google.common.reflect.TypeToken;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.generator.LongevityApp;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.CorfuRuntime.CorfuRuntimeParameters;
 import org.corfudb.runtime.collections.CorfuTable;
@@ -151,35 +152,58 @@ public class LocalCorfuClient implements CorfuClient {
     }
 
     public void waitUntilLayoutNoLongerBootstrapped(String node) {
-            int numRetries = 5;
-            Duration retryInterval = Duration.ofMillis(1000);
+        int numRetries = 5;
+        Duration retryInterval = Duration.ofMillis(1000);
 
-            while (numRetries > 0) {
-                try {
-                    Layout layout = CFUtils
-                            .getUninterruptibly(runtime
-                                            .getLayoutView()
-                                            .getRuntimeLayout()
-                                            .getLayoutClient(node).getLayout(),
-                                    NoBootstrapException.class,
-                                    NetworkException.class,
-                                    TimeoutException.class);
-                    if (Optional.ofNullable(layout).isPresent()) {
-                        log.warn("Layout is {} still present on this node. Retrying for {} ms {} times.", layout, retryInterval, numRetries);
-                        numRetries -= 1;
-                        Sleep.sleepUninterruptibly(retryInterval);
-                    }
-                } catch (NoBootstrapException e) {
-                    log.info("Layout server is not bootstrapped anymore on {}. Success.", node);
-                    return;
-                } catch (TimeoutException | NetworkException e) {
-                    log.info("Layout server's router is not ready yet on {}. Retrying for {} ms {} times.", node, retryInterval, numRetries);
+        while (numRetries > 0) {
+            try {
+                Layout layout = CFUtils
+                        .getUninterruptibly(runtime
+                                        .getLayoutView()
+                                        .getRuntimeLayout()
+                                        .getLayoutClient(node).getLayout(),
+                                NoBootstrapException.class,
+                                NetworkException.class,
+                                TimeoutException.class);
+                if (Optional.ofNullable(layout).isPresent()) {
+                    log.warn("Layout is {} still present on this node. Retrying for {} ms {} times.", layout, retryInterval, numRetries);
                     numRetries -= 1;
                     Sleep.sleepUninterruptibly(retryInterval);
                 }
+            } catch (NoBootstrapException e) {
+                log.info("Layout server is not bootstrapped anymore on {}. Success.", node);
+                return;
+            } catch (TimeoutException | NetworkException e) {
+                log.info("Layout server's router is not ready yet on {}. Retrying for {} ms {} times.", node, retryInterval, numRetries);
+                numRetries -= 1;
+                Sleep.sleepUninterruptibly(retryInterval);
             }
-            log.error("Exhausted all retries for {}.", node);
-            throw new RuntimeException("Exhausted all retries to wait for no bootstrap.");
+        }
+        log.error("Exhausted all retries for {}.", node);
+        throw new RuntimeException("Exhausted all retries to wait for no bootstrap.");
+    }
+
+    public void generateDataForLogUnitIfNeeded(String node, long sizeCapInBytes) {
+        long currentLogUnitSize = CFUtils.getUninterruptibly(getRuntime()
+                .getLayoutView()
+                .getRuntimeLayout()
+                .getLogUnitClient(node).getLogSize());
+
+        if (currentLogUnitSize < sizeCapInBytes) {
+            log.info("Size cap is already reached.");
+        } else {
+            LongevityApp stressTester = new LongevityApp(30000L, 10, node, false);
+            stressTester.runLongevityTestsForOneWorkloadForever(0);
+            while (currentLogUnitSize <= sizeCapInBytes) {
+                Sleep.sleepUninterruptibly(Duration.ofSeconds(5));
+                currentLogUnitSize = CFUtils.getUninterruptibly(getRuntime()
+                        .getLayoutView()
+                        .getRuntimeLayout()
+                        .getLogUnitClient(node).getLogSize());
+            }
+            stressTester.waitForAppToFinish();
+            log.info("Created needed data of {} bytes", sizeCapInBytes);
+        }
     }
 
     @Override

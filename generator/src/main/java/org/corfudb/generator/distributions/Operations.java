@@ -15,7 +15,7 @@ import java.util.List;
 /**
  * This class implements a distribution of all possible operations that the generator
  * can execute.
- *
+ * <p>
  * Created by maithem on 7/14/17.
  */
 public class Operations implements DataSet {
@@ -42,6 +42,15 @@ public class Operations implements DataSet {
 
     public Operation getRandomOperation() {
         return allOperations.get(state.rand.nextInt(allOperations.size()));
+    }
+
+    public Operation getOperation(int index) {
+        if (index < 0 || index >= allOperations.size()) {
+            throw new IndexOutOfBoundsException(String.format("Operation index %d is out of bounds", index));
+        } else {
+            return allOperations.get(index);
+        }
+
     }
 
     public List<Operation> getDataSet() {

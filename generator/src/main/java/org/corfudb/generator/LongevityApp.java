@@ -22,10 +22,9 @@ import java.util.concurrent.TimeUnit;
 /**
  * This Longevity app will stress test corfu using the Load
  * generator during a given duration.
- *
+ * <p>
  * I use a blocking queue in order to limit the number of operation
  * created at any time. Operations as created and consumed as we go.
- *
  */
 @Slf4j
 public class LongevityApp {
@@ -76,7 +75,7 @@ public class LongevityApp {
 
     /**
      * Assess liveness of the application
-     *
+     * <p>
      * If the client was not able to do any operation during the last APPLICATION_TIMEOUT_IN_MS,
      * we declare liveness of the client as failed. Also, if the client was not able to finish
      * in time, it is marked as liveness failure.
@@ -101,15 +100,15 @@ public class LongevityApp {
     /**
      * Give a chance to the workers to finish naturally (thanks to the timer) and then kill
      * the producer and the checkpointer.
-     *
+     * <p>
      * At the end of the duration, we give some margin for the workers to finish their task before shutting
      * down the thread pool.
-     *
+     * <p>
      * If the application is hung (which can happen when something goes wrong) we do a hard exit. If any thread
      * is not playing nice with Interrupted exceptions (which can be a bug as well), this is the only way to
      * be sure we terminate.
      */
-    private void waitForAppToFinish() {
+    public void waitForAppToFinish() {
         workers.shutdown();
         try {
             boolean finishedInTime = workers.
@@ -153,7 +152,7 @@ public class LongevityApp {
      * A thread is tasked to indefinitely create operation. Operations are then
      * put into a blocking queue. The blocking queue serves as a regulator for how
      * many operations exist at the same time. It allows us to regulate the memory footprint.
-     *
+     * <p>
      * The only way to terminate the producer is to call explicitly a shutdownNow() on
      * the executorService.
      */
@@ -174,6 +173,24 @@ public class LongevityApp {
     }
 
     /**
+     * runTaskProducer but only for a one type of operation
+     */
+    private void runTaskProducerForOperation(int opIndex) {
+        taskProducer.execute(() -> {
+            while (true) {
+                Operation current = state.getOperations().getOperation(opIndex);
+                try {
+                    operationQueue.put(current);
+                } catch (InterruptedException e) {
+                    throw new UnrecoverableCorfuInterruptedError(e);
+                } catch (Exception e) {
+                    log.error("operation error", e);
+                }
+            }
+        });
+    }
+
+    /**
      * Each workers in the worker pool will consume an operation
      * from the blocking queue. Once the operation dequeued, it is
      * executed. This happens while we are within the boundary of the
@@ -184,6 +201,24 @@ public class LongevityApp {
         for (int i = 0; i < numberThreads; i++) {
             workers.execute(() -> {
                 while (withinDurationLimit()) {
+                    try {
+                        Operation op = operationQueue.take();
+                        op.execute();
+                    } catch (Exception e) {
+                        log.error("Operation failed with", e);
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * Run task consumers indefinitely
+     */
+    private void runTaskConsumersForever() {
+        for (int i = 0; i < numberThreads; i++) {
+            workers.execute(() -> {
+                while (true) {
                     try {
                         Operation op = operationQueue.take();
                         op.execute();
@@ -214,7 +249,7 @@ public class LongevityApp {
      * @param timeoutInMs
      * @throws SystemUnavailableError
      */
-    private void tryToConnectTimeout (long timeoutInMs) throws SystemUnavailableError {
+    private void tryToConnectTimeout(long timeoutInMs) throws SystemUnavailableError {
         try {
             CompletableFuture.supplyAsync(() -> rt.connect()).get(timeoutInMs, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
@@ -235,5 +270,15 @@ public class LongevityApp {
         runTaskConsumers();
 
         waitForAppToFinish();
+    }
+
+    public void runLongevityTestsForever() {
+        runTaskProducer();
+        runTaskConsumersForever();
+    }
+
+    public void runLongevityTestsForOneWorkloadForever(int opIndex) {
+        runTaskProducerForOperation(opIndex);
+        runTaskConsumersForever();
     }
 }
