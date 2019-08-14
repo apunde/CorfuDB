@@ -151,38 +151,6 @@ public class LocalCorfuClient implements CorfuClient {
         return false;
     }
 
-    public void waitUntilLayoutNoLongerBootstrapped(String node) {
-        int numRetries = 5;
-        Duration retryInterval = Duration.ofMillis(1000);
-
-        while (numRetries > 0) {
-            try {
-                Layout layout = CFUtils
-                        .getUninterruptibly(runtime
-                                        .getLayoutView()
-                                        .getRuntimeLayout()
-                                        .getLayoutClient(node).getLayout(),
-                                NoBootstrapException.class,
-                                NetworkException.class,
-                                TimeoutException.class);
-                if (Optional.ofNullable(layout).isPresent()) {
-                    log.warn("Layout is {} still present on this node. Retrying for {} ms {} times.", layout, retryInterval, numRetries);
-                    numRetries -= 1;
-                    Sleep.sleepUninterruptibly(retryInterval);
-                }
-            } catch (NoBootstrapException e) {
-                log.info("Layout server is not bootstrapped anymore on {}. Success.", node);
-                return;
-            } catch (TimeoutException | NetworkException e) {
-                log.info("Layout server's router is not ready yet on {}. Retrying for {} ms {} times.", node, retryInterval, numRetries);
-                numRetries -= 1;
-                Sleep.sleepUninterruptibly(retryInterval);
-            }
-        }
-        log.error("Exhausted all retries for {}.", node);
-        throw new RuntimeException("Exhausted all retries to wait for no bootstrap.");
-    }
-
     public void generateDataForLogUnitIfNeeded(String node, long sizeCapInBytes) {
         long currentLogUnitSize = CFUtils.getUninterruptibly(getRuntime()
                 .getLayoutView()

@@ -69,7 +69,7 @@ public abstract class AbstractCorfuCluster<P extends CorfuClusterParams, U exten
 
         asyncDeployment.stream()
                 .map(CompletableFuture::join)
-                .forEach(server -> log.debug("Corfu server has deployed: {}", server.getParams().getName()));
+                .forEach(server -> log.info("Corfu server has deployed: {}", server.getParams().getName()));
 
         try {
             bootstrap();

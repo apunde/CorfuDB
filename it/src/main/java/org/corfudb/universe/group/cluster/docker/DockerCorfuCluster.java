@@ -6,6 +6,11 @@ import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.BootstrapUtil;
+import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.clients.IClientRouter;
+import org.corfudb.runtime.clients.LayoutClient;
+import org.corfudb.runtime.clients.LayoutHandler;
+import org.corfudb.runtime.clients.NettyClientRouter;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.Layout.LayoutSegment;
 import org.corfudb.universe.group.cluster.AbstractCorfuCluster;
@@ -18,6 +23,8 @@ import org.corfudb.universe.node.server.docker.DockerCorfuServer;
 import org.corfudb.universe.node.server.docker.DockerParams;
 import org.corfudb.universe.universe.UniverseParams;
 import org.corfudb.universe.util.DockerManager;
+import org.corfudb.util.CFUtils;
+import org.corfudb.util.NodeLocator;
 
 import java.util.Collections;
 import java.util.List;
@@ -74,10 +81,14 @@ public class DockerCorfuCluster extends AbstractCorfuCluster<CorfuClusterParams,
 
     @Override
     public void bootstrap() {
-        Layout layout = getLayout();
-        log.info("Bootstrap docker corfu cluster. Cluster: {}. layout: {}", params.getName(), layout.asJSONString());
 
-        BootstrapUtil.bootstrap(layout, params.getBootStrapRetries(), params.getRetryDuration());
+        Layout layout = getLayout();
+        try{
+            BootstrapUtil.bootstrap(layout, params.getBootStrapRetries(), params.getRetryDuration());
+        }
+        catch(RuntimeException e){
+            log.warn("Servers already bootstrapped. Proceeding.");
+        }
     }
 
     private Layout getLayout() {

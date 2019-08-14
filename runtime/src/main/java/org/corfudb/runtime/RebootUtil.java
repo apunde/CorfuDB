@@ -4,6 +4,8 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.CorfuRuntime.CorfuRuntimeParameters;
 import org.corfudb.runtime.clients.*;
+import org.corfudb.runtime.exceptions.NetworkException;
+import org.corfudb.runtime.exceptions.NoBootstrapException;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.util.CFUtils;
@@ -11,7 +13,9 @@ import org.corfudb.util.NodeLocator;
 import org.corfudb.util.Sleep;
 
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Utility to Reboot a server which includes reset or restart
