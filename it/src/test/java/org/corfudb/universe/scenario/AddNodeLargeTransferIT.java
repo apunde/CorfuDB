@@ -11,7 +11,7 @@ import java.time.Duration;
 
 import static org.corfudb.universe.scenario.ScenarioUtils.waitUninterruptibly;
 
-public class AddNodeLargeTransferIT extends GenericIntegrationTest {
+public class AddNodeLargeTransferIT extends GenericPersistentIntegrationTest {
 
     @Test(timeout = 300000)
     public void addNodeLargeTransfer() {
@@ -23,7 +23,7 @@ public class AddNodeLargeTransferIT extends GenericIntegrationTest {
             RebootUtil.reset(firstServerEndpoint, corfuClient.getRuntime().getParameters(), 3, Duration.ofSeconds(3));
             try {
                 corfuClient.waitUntilLayoutNoLongerBootstrapped(firstServerEndpoint);
-            } catch (InterruptedException e) {
+            } catch (RuntimeException e) {
                 e.printStackTrace();
             }
             System.out.println("Ok good");

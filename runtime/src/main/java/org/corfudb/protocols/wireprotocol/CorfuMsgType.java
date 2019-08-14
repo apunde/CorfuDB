@@ -8,6 +8,7 @@ import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorMsg;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorResponse;
 import org.corfudb.runtime.view.Layout;
 
+import javax.annotation.Nullable;
 import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -69,6 +70,8 @@ public enum CorfuMsgType {
     RESET_LOGUNIT(47, new TypeToken<CorfuPayloadMsg<Long>>(){}, true),
     LOG_ADDRESS_SPACE_REQUEST(48, TypeToken.of(CorfuMsg.class)),
     LOG_ADDRESS_SPACE_RESPONSE(49, new TypeToken<CorfuPayloadMsg<StreamsAddressResponse>>(){}),
+    LOG_SIZE_REQUEST(99, TypeToken.of(CorfuMsg.class)),
+    LOG_SIZE_RESPONSE(100, new TypeToken<CorfuPayloadMsg<Long>>(){}),
 
     WRITE_OK(50, TypeToken.of(CorfuMsg.class)),
     ERROR_TRIMMED(51, TypeToken.of(CorfuMsg.class)),

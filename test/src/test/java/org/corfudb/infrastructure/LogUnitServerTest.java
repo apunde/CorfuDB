@@ -2,6 +2,7 @@ package org.corfudb.infrastructure;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandlerContext;
 import org.assertj.core.api.Assertions;
 import org.corfudb.format.Types;
 import org.corfudb.infrastructure.log.StreamLogFiles;
@@ -13,6 +14,7 @@ import org.corfudb.runtime.view.Address;
 import org.corfudb.runtime.view.stream.StreamAddressSpace;
 import org.corfudb.util.serializer.Serializers;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import java.io.File;
 import java.io.IOException;
@@ -438,6 +440,42 @@ public class LogUnitServerTest extends AbstractServerTest {
             fileChannel.write(buf);
         } while (buf.hasRemaining());
         fileChannel.force(true);
+    }
+
+    @Test
+    public void testSizeOfDirectory() throws  Exception {
+        String tempDir = PARAMETERS.TEST_TEMP_DIR;
+        LogUnitServer logUnitServer = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(tempDir)
+                .setMemory(false)
+                .build());
+
+        this.router.reset();
+        this.router.addServer(logUnitServer);
+
+        CorfuMsg logSizeRequestMsg =
+                CorfuMsgType.LOG_SIZE_REQUEST.msg();
+
+        sendMessage(logSizeRequestMsg);
+        waitForLogUnit(logUnitServer);
+        Assertions.assertThat(getLastMessage().getMsgType())
+                .isEqualTo(CorfuMsgType.LOG_SIZE_RESPONSE);
+        long old_sz = getLastPayloadMessageAs(long.class);
+
+        final long START_ADDRESS = 0L; final String low_payload = "0";
+        final int num_iterations_very_low = 10;
+        final String streamName = "a";
+
+        for (int i = 0; i < num_iterations_very_low; i++)
+            rawWrite(START_ADDRESS+i, low_payload+i, streamName);
+
+        waitForLogUnit(logUnitServer);
+
+        sendMessage(CorfuMsgType.LOG_SIZE_REQUEST.msg());
+        waitForLogUnit(logUnitServer);
+
+        long new_sz = getLastPayloadMessageAs(long.class);
+        assert old_sz != new_sz;
     }
 
     @Test (expected = RuntimeException.class)

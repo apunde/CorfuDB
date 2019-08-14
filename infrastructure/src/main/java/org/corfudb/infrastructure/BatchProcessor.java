@@ -18,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import org.corfudb.infrastructure.BatchWriterOperation.Type;
 import org.corfudb.infrastructure.log.StreamLog;
+import org.corfudb.infrastructure.log.StreamLogFiles;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.PriorityLevel;
@@ -190,6 +191,9 @@ public class BatchProcessor implements AutoCloseable {
                             case LOG_ADDRESS_SPACE_QUERY:
                                 // Retrieve the address space for every stream in the log.
                                 currOp.setResultValue(streamLog.getStreamsAddressSpace());
+                                break;
+                            case LOG_SIZE_QUERY:
+                                currOp.setResultValue(streamLog.estimateSizeOfLogDirectory());
                                 break;
                             default:
                                 log.warn("Unknown BatchWriterOperation {}", currOp);

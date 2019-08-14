@@ -17,6 +17,7 @@ import org.corfudb.runtime.view.ObjectsView;
 import org.corfudb.universe.node.stress.Stress;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.NodeLocator;
+import org.corfudb.util.Sleep;
 import org.corfudb.util.retry.ExponentialBackoffRetry;
 import org.corfudb.util.retry.IRetry;
 import org.corfudb.util.retry.IntervalRetry;
@@ -149,19 +150,12 @@ public class LocalCorfuClient implements CorfuClient {
         return false;
     }
 
-    public void waitUntilLayoutNoLongerBootstrapped(String node) throws InterruptedException {
-        try {
+    public void waitUntilLayoutNoLongerBootstrapped(String node) {
+            int numRetries = 5;
+            Duration retryInterval = Duration.ofMillis(1000);
 
-            AtomicInteger numRetries = new AtomicInteger(3);
-            int retryInterval = 3000;
-
-            IRetry.build(IntervalRetry.class, RetryExhaustedException.class, () -> {
+            while (numRetries > 0) {
                 try {
-                    if (numRetries.get() == 0) {
-                        throw new RetryExhaustedException(String
-                                .format("Retries to poll layout are exhausted for %s", node));
-                    }
-
                     Layout layout = CFUtils
                             .getUninterruptibly(runtime
                                             .getLayoutView()
@@ -171,23 +165,21 @@ public class LocalCorfuClient implements CorfuClient {
                                     NetworkException.class,
                                     TimeoutException.class);
                     if (Optional.ofNullable(layout).isPresent()) {
-                        log.warn("Layout is {} still present on this node. Retrying..", layout);
-                        numRetries.addAndGet(-1);
-                        throw new RetryNeededException();
+                        log.warn("Layout is {} still present on this node. Retrying for {} ms {} times.", layout, retryInterval, numRetries);
+                        numRetries -= 1;
+                        Sleep.sleepUninterruptibly(retryInterval);
                     }
-
                 } catch (NoBootstrapException e) {
-                    log.info("Layout server is not bootstrapped anymore.");
+                    log.info("Layout server is not bootstrapped anymore on {}. Success.", node);
+                    return;
                 } catch (TimeoutException | NetworkException e) {
-                    log.info("Layout server's router is not ready yet. Retrying..");
-                    numRetries.addAndGet(-1);
-                    throw new RetryNeededException();
+                    log.info("Layout server's router is not ready yet on {}. Retrying for {} ms {} times.", node, retryInterval, numRetries);
+                    numRetries -= 1;
+                    Sleep.sleepUninterruptibly(retryInterval);
                 }
-                return true;
-            }).setOptions(retry -> retry.setRetryInterval(retryInterval)).run();
-        } catch (InterruptedException | RetryExhaustedException e) {
-            throw e;
-        }
+            }
+            log.error("Exhausted all retries for {}.", node);
+            throw new RuntimeException("Exhausted all retries to wait for no bootstrap.");
     }
 
     @Override

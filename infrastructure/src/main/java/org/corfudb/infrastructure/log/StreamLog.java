@@ -52,6 +52,7 @@ public interface StreamLog {
      */
     void compact();
 
+
     /**
      * Get the global tail and stream tails.
      */
@@ -93,6 +94,12 @@ public interface StreamLog {
      * @param force force data to secondary storage if true
      */
     void sync(boolean force) throws IOException;
+
+    /**
+     * Estimates size of log directory
+     * @return size of log directory
+     */
+    long estimateSizeOfLogDirectory();
 
     /**
      * Close the stream log.

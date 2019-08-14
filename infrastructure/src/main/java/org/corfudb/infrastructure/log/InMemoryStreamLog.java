@@ -161,6 +161,11 @@ public class InMemoryStreamLog implements StreamLog, StreamLogWithRankedAddressS
     }
 
     @Override
+    public long estimateSizeOfLogDirectory() {
+        return 0;
+    }
+
+    @Override
     public void close() {
         logCache = new HashMap<>();
     }

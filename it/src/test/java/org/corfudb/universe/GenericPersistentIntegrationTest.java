@@ -14,7 +14,7 @@ public abstract class GenericPersistentIntegrationTest extends GenericIntegratio
     }
 
     private Integer [] getPortList(int seed, int numNodes){
-        return IntStream.range(1, numNodes).boxed().map(i -> seed + i).sorted().toArray(Integer[]::new);
+        return IntStream.range(seed, seed + numNodes).boxed().toArray(Integer[]::new);
     }
 
     @Override
@@ -22,6 +22,7 @@ public abstract class GenericPersistentIntegrationTest extends GenericIntegratio
         String persistentClusterName = "abc";
         int seed = 9000;
         Integer [] ports = getPortList(seed, numNodes);
+
         Fixtures.PersistentUniverseFixture universeFixture = new Fixtures.PersistentUniverseFixture();
         universeFixture.setNumNodes(numNodes);
         universeFixture.setPorts(ports);

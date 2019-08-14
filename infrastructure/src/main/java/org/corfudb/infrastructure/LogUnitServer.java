@@ -48,6 +48,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.LOG_ADDRESS_SPACE_QUERY;
+import static org.corfudb.infrastructure.BatchWriterOperation.Type.LOG_SIZE_QUERY;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.PREFIX_TRIM;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.RANGE_WRITE;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.RESET;
@@ -167,6 +168,19 @@ public class LogUnitServer extends AbstractServer {
         batchWriter.<StreamsAddressResponse>addTask(LOG_ADDRESS_SPACE_QUERY, payloadMsg)
                 .thenAccept(tailsResp -> r.sendResponse(ctx, msg,
                         CorfuMsgType.LOG_ADDRESS_SPACE_RESPONSE.payloadMsg(tailsResp)))
+                .exceptionally(ex -> {
+                    handleException(ex, ctx, payloadMsg, r);
+                    return null;
+                });
+    }
+
+    @ServerHandler(type = CorfuMsgType.LOG_SIZE_REQUEST)
+    public void handleLogSizeRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        CorfuPayloadMsg<Void> payloadMsg = new CorfuPayloadMsg<>();
+        payloadMsg.copyBaseFields(msg);
+        log.debug("handleLogSizeRequest: received a log size request {}", msg);
+        batchWriter.addTask(LOG_SIZE_QUERY, payloadMsg)
+                .thenAccept(size -> r.sendResponse(ctx, msg, CorfuMsgType.LOG_SIZE_RESPONSE.payloadMsg(size)))
                 .exceptionally(ex -> {
                     handleException(ex, ctx, payloadMsg, r);
                     return null;

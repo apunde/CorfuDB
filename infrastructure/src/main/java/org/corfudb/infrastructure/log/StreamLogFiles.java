@@ -155,6 +155,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
 
     /**
      * Create stream log directory if not exists
+     *
      * @return total capacity of the file system that owns the log files.
      */
     private long initStreamLogDirectory() {
@@ -195,7 +196,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * This method will scan the log (i.e. read all log segment files)
      * on this LU and create a map of stream offsets and the global
      * addresses seen.
-     *
+     * <p>
      * consecutive segments from [startSegment, endSegment]
      */
     private void initializeLogMetadata() {
@@ -1341,5 +1342,10 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         } catch (IOException ioe) {
             throw new IllegalStateException(ioe);
         }
+    }
+
+    @VisibleForTesting
+    public long estimateSizeOfLogDirectory() {
+        return estimateSize(logDir);
     }
 }
