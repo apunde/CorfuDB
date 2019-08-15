@@ -222,7 +222,7 @@ public class LogUnitClient extends AbstractClient {
      * with the size of the requested log directory in bytes.
      */
     public CompletableFuture<Long> getLogSize() {
-        return sendMessageWithFuture(CorfuMsgType.LOG_ADDRESS_SPACE_REQUEST.msg());
+        return sendMessageWithFuture(CorfuMsgType.LOG_SIZE_REQUEST.msg());
     }
 
     /**

@@ -152,26 +152,52 @@ public class LocalCorfuClient implements CorfuClient {
     }
 
     public void generateDataForLogUnitIfNeeded(String node, long sizeCapInBytes) {
-        long currentLogUnitSize = CFUtils.getUninterruptibly(getRuntime()
-                .getLayoutView()
-                .getRuntimeLayout()
-                .getLogUnitClient(node).getLogSize());
+        try{
+            long currentLogUnitSize = IRetry.build(IntervalRetry.class, RetryExhaustedException.class, () -> {
+                try{
+                    return CFUtils.getUninterruptibly(getRuntime()
+                            .getLayoutView()
+                            .getRuntimeLayout()
+                            .getLogUnitClient(node).getLogSize(), NetworkException.class, TimeoutException.class);
+                }
+                catch(NetworkException | TimeoutException e){
+                    log.info("Router not ready yet, retrying...");
+                    throw new RetryNeededException();
+                }
+                catch (Exception e){
+                    log.error("Some other exception", e);
+                }
+                return 0L;
 
-        if (currentLogUnitSize < sizeCapInBytes) {
-            log.info("Size cap is already reached.");
-        } else {
-            LongevityApp stressTester = new LongevityApp(30000L, 10, node, false);
-            stressTester.runLongevityTestsForOneWorkloadForever(0);
-            while (currentLogUnitSize <= sizeCapInBytes) {
-                Sleep.sleepUninterruptibly(Duration.ofSeconds(5));
-                currentLogUnitSize = CFUtils.getUninterruptibly(getRuntime()
-                        .getLayoutView()
-                        .getRuntimeLayout()
-                        .getLogUnitClient(node).getLogSize());
-            }
-            stressTester.waitForAppToFinish();
-            log.info("Created needed data of {} bytes", sizeCapInBytes);
+            }).setOptions(x -> x.setRetryInterval(2000)).run();
+            log.info("Current log unit size is {}", currentLogUnitSize);
         }
+        catch(Exception e){
+            log.info("Interrupted");
+        }
+
+
+
+//        long currentLogUnitSize = 0;
+//        log.info("Current log unit size of {} is {}", node, sizeCapInBytes);
+//        if (currentLogUnitSize < sizeCapInBytes) {
+//            log.info("Size cap is already reached.");
+//        } else {
+//            log.info("Starting a longevity tester asynchronously.");
+//
+//            LongevityApp stressTester = new LongevityApp(30000L, 10, node, false);
+//            stressTester.runLongevityTestsForOneWorkloadForever(0);
+//            while (currentLogUnitSize <= sizeCapInBytes) {
+//                log.info("Current size is {} but {} is needed. Waiting.", currentLogUnitSize, sizeCapInBytes);
+//                Sleep.sleepUninterruptibly(Duration.ofSeconds(5));
+//                currentLogUnitSize = CFUtils.getUninterruptibly(getRuntime()
+//                        .getLayoutView()
+//                        .getRuntimeLayout()
+//                        .getLogUnitClient(node).getLogSize());
+//            }
+//            stressTester.waitForAppToFinish();
+//            log.info("Created needed data of {} bytes for {}", sizeCapInBytes, node);
+//        }
     }
 
     @Override

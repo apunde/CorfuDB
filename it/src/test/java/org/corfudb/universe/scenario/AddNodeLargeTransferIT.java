@@ -19,7 +19,7 @@ public class AddNodeLargeTransferIT extends GenericPersistentIntegrationTest {
             CorfuCluster corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
             LocalCorfuClient corfuClient = corfuCluster.getLocalCorfuClient();
             String firstServerEndpoint = corfuCluster.getFirstServer().getEndpoint();
-            // corfuClient.generateDataForLogUnitIfNeeded(firstServerEndpoint, 10000);
+            corfuClient.generateDataForLogUnitIfNeeded(firstServerEndpoint, 10000);
             waitUninterruptibly(Duration.ofSeconds(300000));
         });
     }
