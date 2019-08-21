@@ -77,6 +77,57 @@ public class StateTransferTest extends AbstractViewTest {
                 .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
     }
 
+    // Segment1: 0 -> Large number
+    // Segment2:
+    @Test
+    public void verifyLargeStateTransferAndMerge() throws Exception{
+
+        ServerContext sc1 = new ServerContextBuilder()
+                .setMemory(false)
+                .setSingle(false)
+                .setLogPath("/tmp/0")
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                .setPort(SERVERS.PORT_0).build();
+
+        ServerContext sc2 = new ServerContextBuilder()
+                .setMemory(false)
+                .setSingle(false)
+                .setLogPath("/tmp/1")
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
+                .setPort(SERVERS.PORT_1).build();
+
+        addServer(SERVERS.PORT_0, sc1);
+        addServer(SERVERS.PORT_1, sc2);
+
+        final long writtenAddressBatch = 2822L;
+        Layout testLayout = new TestLayoutBuilder()
+                .setEpoch(1L)
+                .addLayoutServer(SERVERS.PORT_0)
+                .addLayoutServer(SERVERS.PORT_1)
+                .addSequencer(SERVERS.PORT_0)
+                .addSequencer(SERVERS.PORT_1)
+                .buildSegment()
+                .setStart(0L)
+                .setEnd(writtenAddressBatch)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addToSegment()
+                .addToLayout()
+                .buildSegment()
+                .setStart(writtenAddressBatch)
+                .setEnd(-1L)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addLogUnit(SERVERS.PORT_1)
+                .addToSegment()
+                .addToLayout()
+                .build();
+
+        bootstrapAllServers(testLayout);
+        Thread.sleep(50000000);
+
+
+    }
     /**
      * The test first creates a layout with 2 segments.
      * Segment 1: 0 -> 3 (exclusive) Node 0
@@ -116,6 +167,7 @@ public class StateTransferTest extends AbstractViewTest {
                 .addToSegment()
                 .addToLayout()
                 .build();
+
         bootstrapAllServers(l1);
 
         corfuRuntime = getNewRuntime(getDefaultNode()).connect();

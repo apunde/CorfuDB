@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,20 +31,21 @@ import org.corfudb.util.retry.RetryNeededException;
 @Slf4j
 public class StateTransfer {
 
-    private StateTransfer() {
-        // Hide implicit public constructor.
-    }
 
     // The exponential backoff will not exceed this max retry timeout.
+    @Getter
     private static final Duration MAX_RETRY_TIMEOUT = Duration.ofSeconds(10);
 
     // Random factor introduced into the exponential backoff.
+    @Getter
     private static final float RANDOM_FACTOR_BACKOFF = 0.5f;
 
     // Maximum number of retries after which the Overwrite Exception is rethrown.
+    @Getter
     private static final int OVERWRITE_RETRIES = 3;
 
     // Default read options for the state read calls
+    @Getter
     private static ReadOptions readOptions = ReadOptions.builder()
             .waitForHole(true)
             .clientCacheable(false)

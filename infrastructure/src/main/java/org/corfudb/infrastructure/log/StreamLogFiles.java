@@ -6,6 +6,7 @@ import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.protobuf.AbstractMessage;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Duration;
 import com.google.protobuf.InvalidProtocolBufferException;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -47,6 +48,7 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -106,21 +108,12 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     // Resource quota to track the log size
     private ResourceQuota logSizeQuota;
 
-    /**
-     * Returns a file-based stream log object.
-     *
-     * @param serverContext Context object that provides server state such as epoch,
-     *                      segment and start address
-     * @param noVerify      Disable checksum if true
-     */
-    public StreamLogFiles(ServerContext serverContext, boolean noVerify) {
-        logDir = Paths.get(serverContext.getServerConfig().get("--log-path").toString(), "log");
+    public StreamLogFiles(Path logDir, StreamLogDataStore dataStore, String logSizeLimitPercentageParam, boolean noVerify){
+        this.logDir = logDir;
         writeChannels = new ConcurrentHashMap<>();
         channelsToSync = new HashSet<>();
         this.verify = !noVerify;
-        this.dataStore = StreamLogDataStore.builder().dataStore(serverContext.getDataStore()).build();
-
-        String logSizeLimitPercentageParam = (String) serverContext.getServerConfig().get("--log-size-quota-percentage");
+        this.dataStore = dataStore;
         final double logSizeLimitPercentage = Double.parseDouble(logSizeLimitPercentageParam);
         if (logSizeLimitPercentage < 0.0 || 100.0 < logSizeLimitPercentage) {
             String msg = String.format("Invalid quota: quota(%f)%% must be between 0-100%%",
@@ -140,6 +133,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         // Starting address initialization should happen before
         // initializing the tail segment (i.e. initializeMaxGlobalAddress)
         logMetadata = new LogMetadata();
+
         initializeLogMetadata();
 
         // This can happen if a prefix trim happens on
@@ -147,6 +141,22 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         if (Math.max(logMetadata.getGlobalTail(), 0L) < getTrimMark()) {
             syncTailSegment(getTrimMark() - 1);
         }
+    }
+
+    /**
+     * Returns a file-based stream log object.
+     *
+     * @param serverContext Context object that provides server state such as epoch,
+     *                      segment and start address
+     * @param noVerify      Disable checksum if true
+     */
+    public StreamLogFiles(ServerContext serverContext, boolean noVerify) {
+        this(
+                Paths.get(serverContext.getServerConfig().get("--log-path").toString(), "log"),
+                StreamLogDataStore.builder().dataStore(serverContext.getDataStore()).build(),
+                (String) serverContext.getServerConfig().get("--log-size-quota-percentage"),
+                noVerify
+        );
     }
 
     private long getStartingSegment() {
@@ -200,6 +210,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * consecutive segments from [startSegment, endSegment]
      */
     private void initializeLogMetadata() {
+        log.info("Starting \n\n\n");
         long startingSegment = getStartingSegment();
         long tailSegment = dataStore.getTailSegment();
 
@@ -209,13 +220,17 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         // Note: if a checkpoint END record is not found (i.e., incomplete) this data is not considered
         // for stream trim mark computation.
         for (long currentSegment = tailSegment; currentSegment >= startingSegment; currentSegment--) {
+
+            long segmentStart = System.currentTimeMillis();
             SegmentHandle segment = getSegmentHandleForAddress(currentSegment * RECORDS_PER_LOG_FILE + 1);
+
             try {
                 for (Long address : segment.getKnownAddresses().keySet()) {
                     // skip trimmed entries
                     if (address < dataStore.getStartingAddress()) {
                         continue;
                     }
+                    long readStart = System.currentTimeMillis();
                     LogData logEntry = read(address);
                     logMetadata.update(logEntry, true);
                 }
@@ -511,6 +526,10 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         return metadata;
     }
 
+    private void transferFile(String fileName) throws IOException{
+
+    }
+
     private String getDataCorruptionErrorMessage(
             String message, FileChannel fileChannel, String segmentFile) throws IOException {
         return message +
@@ -633,6 +652,34 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         return entry;
     }
 
+
+    public void readMetadataSpace(SegmentHandle segment) throws IOException{
+        FileChannel fileChannel = segment.getWriteChannel();
+        fileChannel.position(0);
+
+        LogHeader header = parseHeader(fileChannel, segment.getFileName());
+
+        if (header == null) {
+            log.warn("Couldn't find log header for {}, creating new header.", segment.getFileName());
+            writeHeader(fileChannel, VERSION, verify);
+            return;
+        }
+
+        while (fileChannel.size() - fileChannel.position() > 0) {
+            long channelOffset = fileChannel.position();
+            Metadata metadata = parseMetadata(fileChannel, segment.getFileName());
+
+            AddressMetaData addressMetadata = new AddressMetaData(
+                    metadata.getPayloadChecksum(),
+                    metadata.getLength(),
+                    channelOffset + METADATA_SIZE
+            );
+
+            segment.getKnownAddresses().put(0L, addressMetadata);
+
+        }
+    }
+
     /**
      * Reads an address space from a log file into a SegmentHandle.
      *
@@ -651,8 +698,13 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
 
         while (fileChannel.size() - fileChannel.position() > 0) {
             long channelOffset = fileChannel.position();
+            long start = System.nanoTime();
             Metadata metadata = parseMetadata(fileChannel, segment.getFileName());
+            long metadataEnd = System.nanoTime();
+
+            long secondStart = System.nanoTime();
             LogEntry entry = parseEntry(fileChannel, metadata, segment.getFileName());
+            long entryEnd = System.nanoTime();
 
             if (entry == null) {
                 // Metadata or Entry were partially written
@@ -676,6 +728,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             );
 
             segment.getKnownAddresses().put(entry.getGlobalAddress(), addressMetadata);
+
         }
     }
 
@@ -765,6 +818,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
                 // The first time we open a file we should read to the end, to load the
                 // map of entries we already have.
                 // Once the segment address space is loaded, it should be ready to accept writes.
+                long start = System.currentTimeMillis();
                 readAddressSpace(sh);
                 return sh;
             } catch (IOException e) {

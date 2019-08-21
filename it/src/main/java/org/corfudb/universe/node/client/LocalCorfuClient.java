@@ -2,10 +2,19 @@ package org.corfudb.universe.node.client;
 
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.reflect.TypeToken;
+import com.google.common.util.concurrent.RateLimiter;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.RandomStringUtils;
 import org.corfudb.generator.LongevityApp;
+import org.corfudb.protocols.wireprotocol.DataType;
+import org.corfudb.protocols.wireprotocol.ILogData;
+import org.corfudb.protocols.wireprotocol.LogData;
+import org.corfudb.protocols.wireprotocol.TailsResponse;
+import org.corfudb.protocols.wireprotocol.TokenResponse;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.CorfuRuntime.CorfuRuntimeParameters;
 import org.corfudb.runtime.collections.CorfuTable;
@@ -16,6 +25,7 @@ import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.ManagementView;
 import org.corfudb.runtime.view.ObjectsView;
 import org.corfudb.universe.node.stress.Stress;
+import org.corfudb.universe.scenario.fixture.Fixtures;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.NodeLocator;
 import org.corfudb.util.Sleep;
@@ -25,9 +35,15 @@ import org.corfudb.util.retry.IntervalRetry;
 import org.corfudb.util.retry.RetryNeededException;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -151,53 +167,117 @@ public class LocalCorfuClient implements CorfuClient {
         return false;
     }
 
-    public void generateDataForLogUnitIfNeeded(String node, long sizeCapInBytes) {
-        try{
-            long currentLogUnitSize = IRetry.build(IntervalRetry.class, RetryExhaustedException.class, () -> {
-                try{
+    public long getCurrentLogUnitSize(String node) {
+        try {
+            return IRetry.build(IntervalRetry.class, RetryExhaustedException.class, () -> {
+                try {
                     return CFUtils.getUninterruptibly(getRuntime()
                             .getLayoutView()
                             .getRuntimeLayout()
                             .getLogUnitClient(node).getLogSize(), NetworkException.class, TimeoutException.class);
-                }
-                catch(NetworkException | TimeoutException e){
-                    log.info("Router not ready yet, retrying...");
+                } catch (NetworkException | TimeoutException e) {
+                    log.info("Router not ready yet, retrying...", e);
                     throw new RetryNeededException();
-                }
-                catch (Exception e){
+                } catch (Exception e) {
                     log.error("Some other exception", e);
                 }
                 return 0L;
 
-            }).setOptions(x -> x.setRetryInterval(2000)).run();
-            log.info("Current log unit size is {}", currentLogUnitSize);
-        }
-        catch(Exception e){
+            }).setOptions(policy -> policy.setRetryInterval(2000)).run();
+        } catch (Exception e) {
             log.info("Interrupted");
         }
+        log.info("Failed, returning 0");
+        return 0L;
+    }
+
+    public long getTail(String node){
+        try {
+            return IRetry.build(IntervalRetry.class, RetryExhaustedException.class, () -> {
+                try {
+                    TailsResponse tailresp = CFUtils.getUninterruptibly(getRuntime()
+                            .getLayoutView()
+                            .getRuntimeLayout()
+                            .getLogUnitClient(node).getLogTail(), NetworkException.class, TimeoutException.class);
+                    return tailresp.getLogTail();
+                } catch (NetworkException | TimeoutException e) {
+                    log.info("Router not ready yet, retrying...", e);
+                    throw new RetryNeededException();
+                } catch (Exception e) {
+                    log.error("Some other exception", e);
+                }
+                return 0L;
+
+            }).setOptions(policy -> policy.setRetryInterval(2000)).run();
+        } catch (Exception e) {
+            log.info("Interrupted");
+        }
+        log.info("Failed, returning 0");
+        return 0L;
+    }
+
+    // 1 mb string
+    private String generateLargeString(Random rand) {
+        int size = 1024 * 1024 * 2;
+        char[] chars = new char[size];
+        Arrays.fill(chars, (char) (rand.nextInt(26) + 'a'));
+        return new String(chars);
+    }
+
+    // 100 byte string
+    private String generateSmallString(Random rand) {
+        int size = 100;
+        char[] chars = new char[size];
+        Arrays.fill(chars, (char) (rand.nextInt(26) + 'a'));
+        return new String(chars);
+    }
+
+    private LogData generatePayload(ByteBuf buffer, UUID streamId, UUID clientId) {
+        final LogData ld = new LogData(DataType.DATA, buffer);
+        TokenResponse tokenResponse = runtime.getSequencerView()
+                .next(streamId);
+
+        ld.setId(clientId);
+        ld.useToken(tokenResponse);
+        return ld;
+    }
+
+    public void generateDataForLogUnitIfNeeded(String node, long sizeCapInBytes, int reqsPerSecond) {
 
 
+        long currentLogUnitSize = getCurrentLogUnitSize(node);
+        Random rand = new Random();
+        ExecutorService ec = Executors.newSingleThreadExecutor();
 
-//        long currentLogUnitSize = 0;
-//        log.info("Current log unit size of {} is {}", node, sizeCapInBytes);
-//        if (currentLogUnitSize < sizeCapInBytes) {
-//            log.info("Size cap is already reached.");
-//        } else {
-//            log.info("Starting a longevity tester asynchronously.");
-//
-//            LongevityApp stressTester = new LongevityApp(30000L, 10, node, false);
-//            stressTester.runLongevityTestsForOneWorkloadForever(0);
-//            while (currentLogUnitSize <= sizeCapInBytes) {
-//                log.info("Current size is {} but {} is needed. Waiting.", currentLogUnitSize, sizeCapInBytes);
-//                Sleep.sleepUninterruptibly(Duration.ofSeconds(5));
-//                currentLogUnitSize = CFUtils.getUninterruptibly(getRuntime()
-//                        .getLayoutView()
-//                        .getRuntimeLayout()
-//                        .getLogUnitClient(node).getLogSize());
-//            }
-//            stressTester.waitForAppToFinish();
-//            log.info("Created needed data of {} bytes for {}", sizeCapInBytes, node);
-//        }
+        UUID streamId = CorfuRuntime.getStreamID("stream");
+        UUID clientId = UUID.randomUUID();
+        if (currentLogUnitSize >= sizeCapInBytes) {
+            log.info("Current num/size of records reached.");
+        } else {
+            // RL not to kill a setup prematurely
+            RateLimiter rateLimiter = RateLimiter.create(reqsPerSecond);
+
+            ec.execute(() -> {
+                while (true) {
+                    rateLimiter.acquire(reqsPerSecond);
+                    final LogData ld = generatePayload(Unpooled.wrappedBuffer(generateLargeString(rand).getBytes()), streamId, clientId);
+
+                    getRuntime()
+                            .getLayoutView()
+                            .getRuntimeLayout()
+                            .getLogUnitClient(node).write(ld);
+                }
+            });
+            while (currentLogUnitSize <= sizeCapInBytes) {
+
+                log.info("Current size is {} but {} is needed. Waiting.", currentLogUnitSize, sizeCapInBytes);
+                Sleep.sleepUninterruptibly(Duration.ofMillis(3000));
+                currentLogUnitSize = getCurrentLogUnitSize(node);
+            }
+
+            log.info("Created needed data of {} bytes for {}. Shutting down the executor.", sizeCapInBytes, node);
+            ec.shutdownNow();
+        }
     }
 
     @Override

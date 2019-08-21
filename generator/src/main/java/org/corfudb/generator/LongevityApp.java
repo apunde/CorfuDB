@@ -7,6 +7,8 @@ import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.unrecoverable.SystemUnavailableError;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterruptedError;
 
+import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -173,12 +175,13 @@ public class LongevityApp {
     }
 
     /**
-     * runTaskProducer but only for a one type of operation
+     * runTaskProducer but only for selected operations
      */
-    private void runTaskProducerForOperation(int opIndex) {
+    private void runTaskProducerForOperations(List<Integer> opIndices) {
+        Random rand = new Random();
         taskProducer.execute(() -> {
             while (true) {
-                Operation current = state.getOperations().getOperation(opIndex);
+                Operation current = state.getOperations().getOperation(opIndices.get(rand.nextInt(opIndices.size())));
                 try {
                     operationQueue.put(current);
                 } catch (InterruptedException e) {
@@ -277,8 +280,8 @@ public class LongevityApp {
         runTaskConsumersForever();
     }
 
-    public void runLongevityTestsForOneWorkloadForever(int opIndex) {
-        runTaskProducerForOperation(opIndex);
+    public void runLongevityTestsForWorkloadsForever(List<Integer> indices) {
+        runTaskProducerForOperations(indices);
         runTaskConsumersForever();
     }
 }

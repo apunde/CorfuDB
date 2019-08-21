@@ -140,6 +140,12 @@ public abstract class AbstractCorfuCluster<P extends CorfuClusterParams, U exten
                 .join();
     }
 
+    public CorfuServer addNodeWithCustomParams(CorfuServerParams corfuServerParams) {
+        params.add(corfuServerParams);
+        return deployCorfuServerAsync(buildCorfuServer(corfuServerParams))
+                .join();
+    }
+
     @Override
     public <T extends Node> T getNode(String nodeNameSuffix) {
         String fullNodeName = params.getFullNodeName(nodeNameSuffix);

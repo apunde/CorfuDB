@@ -6,6 +6,7 @@ import java.util.Set;
 
 import javax.annotation.Nonnull;
 
+import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.orchestrator.Action;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.view.Layout;
@@ -16,6 +17,7 @@ import org.corfudb.runtime.view.Layout;
  * servers in the 2 oldest subsequent segments are equal.
  * Created by Zeeshan on 2019-02-06.
  */
+@Slf4j
 public class RestoreRedundancyMergeSegments extends Action {
 
     /**
@@ -47,12 +49,13 @@ public class RestoreRedundancyMergeSegments extends Action {
         // Refresh layout.
         runtime.invalidateLayout();
         Layout layout = runtime.getLayoutView().getLayout();
-
         // Each segment is compared with the first segment. The data is restored in any new LogUnit nodes and then
         // merged to this segment. This is done for all the segments.
         final int layoutSegmentToMergeTo = 0;
 
         // Catchup all servers across all segments.
+
+        long startTransferTime = System.currentTimeMillis();
         while (layout.getSegments().size() > 1) {
 
             Set<String> lowRedundancyServers = getNodesWithReducedRedundancy(layout, layoutSegmentToMergeTo);
@@ -71,5 +74,6 @@ public class RestoreRedundancyMergeSegments extends Action {
             runtime.invalidateLayout();
             layout = runtime.getLayoutView().getLayout();
         }
+        log.info("End transfer time: {}", System.currentTimeMillis() - startTransferTime);
     }
 }

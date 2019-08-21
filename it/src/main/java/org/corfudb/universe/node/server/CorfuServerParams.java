@@ -3,6 +3,7 @@ package org.corfudb.universe.node.server;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Builder.Default;
+import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NonNull;
@@ -21,6 +22,7 @@ import java.time.Duration;
 @ToString
 public class CorfuServerParams implements NodeParams<CorfuServerParams> {
     @NonNull
+    @Getter
     private final String streamLogDir = "db";
     @Default
     @Getter
