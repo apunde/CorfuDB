@@ -62,8 +62,10 @@ public class TestServerRouter implements IServerRouter {
 
     @Override
     public void sendResponse(ChannelHandlerContext ctx, CorfuMsg inMsg, CorfuMsg outMsg) {
+
         outMsg.copyBaseFields(inMsg);
         outMsg.setEpoch(getServerEpoch());
+
         if (rules.stream()
                 .map(x -> x.evaluate(outMsg, this))
                 .allMatch(x -> x)) {

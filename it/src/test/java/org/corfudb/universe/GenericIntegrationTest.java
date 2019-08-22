@@ -52,7 +52,7 @@ public abstract class GenericIntegrationTest {
     public LoggingParams getDockerLoggingParams() {
         return LoggingParams.builder()
                 .testName(getTestName())
-                .enabled(false)
+                .enabled(true)
                 .build();
     }
 

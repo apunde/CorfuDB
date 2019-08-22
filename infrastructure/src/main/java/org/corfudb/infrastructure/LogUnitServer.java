@@ -284,6 +284,24 @@ public class LogUnitServer extends AbstractServer {
                 });
     }
 
+    @ServerHandler(type = CorfuMsgType.LOG_TRANSFER_REQUEST)
+    private void startTransfer(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r){
+        log.info("Initiate a transfer");
+        streamLog.initiateTransfer();
+        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+    }
+
+    @ServerHandler(type = CorfuMsgType.LOG_OPEN_SOCKET_REQUEST)
+    private void openSocket(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r){
+        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+        log.info("Opening a socket");
+        long start = System.currentTimeMillis();
+        streamLog.openSocketAndReceiveData();
+        streamLog.initializeLogMetadata();
+        log.info("Transfer took: {}", System.currentTimeMillis() - start);
+        // open socket here
+    }
+
     @ServerHandler(type = CorfuMsgType.READ_REQUEST)
     public void read(CorfuPayloadMsg<ReadRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
         long address = msg.getPayload().getAddress();

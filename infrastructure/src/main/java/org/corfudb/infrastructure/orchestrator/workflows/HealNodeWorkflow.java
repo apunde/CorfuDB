@@ -27,11 +27,13 @@ public class HealNodeWorkflow extends AddNodeWorkflow {
 
     private final HealNodeRequest request;
 
-    public HealNodeWorkflow(HealNodeRequest healNodeRequest) {
+    public HealNodeWorkflow(HealNodeRequest healNodeRequest, String currentEndpoint) {
         super(new AddNodeRequest(healNodeRequest.getEndpoint()));
         this.request = healNodeRequest;
+        RestoreRedundancyMergeSegments rrms = new RestoreRedundancyMergeSegments();
+        rrms.setLocalEndpoint(currentEndpoint);
         this.actions = ImmutableList.of(new HealNodeToLayout(),
-                new RestoreRedundancyMergeSegments());
+                rrms);
     }
 
     @Override

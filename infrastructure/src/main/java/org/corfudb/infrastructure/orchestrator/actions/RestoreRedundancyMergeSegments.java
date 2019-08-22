@@ -6,6 +6,8 @@ import java.util.Set;
 
 import javax.annotation.Nonnull;
 
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.orchestrator.Action;
 import org.corfudb.runtime.CorfuRuntime;
@@ -37,6 +39,10 @@ public class RestoreRedundancyMergeSegments extends Action {
                 layout.getSegments().get(layoutSegmentIndex).getAllLogServers());
     }
 
+    @Getter
+    @Setter
+    private String localEndpoint;
+
     @Nonnull
     @Override
     public String getName() {
@@ -64,7 +70,8 @@ public class RestoreRedundancyMergeSegments extends Action {
             // TODO: Add stripe specific transfer granularity for optimization.
             // Transfer the replicated segment to the difference set calculated above.
             for (String lowRedundancyServer : lowRedundancyServers) {
-                StateTransfer.transfer(layout, lowRedundancyServer, runtime, layout.getFirstSegment());
+                // StateTransfer.transfer(layout, lowRedundancyServer, runtime, layout.getFirstSegment());
+                ZeroCopyStateTransfer.transfer(layout, localEndpoint, lowRedundancyServer, runtime, layout.getFirstSegment());
             }
 
             // Merge the 2 segments.

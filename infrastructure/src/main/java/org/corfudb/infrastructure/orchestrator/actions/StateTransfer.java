@@ -136,7 +136,7 @@ public class StateTransfer {
      * @param endpoint Endpoint ot transfer data to.
      * @return Trim Address.
      */
-    private static long setTrimOnNewLogUnit(Layout layout, CorfuRuntime runtime,
+    public static long setTrimOnNewLogUnit(Layout layout, CorfuRuntime runtime,
                                             String endpoint) {
 
         long trimMark = runtime.getAddressSpaceView().getTrimMark().getSequence();
@@ -161,7 +161,7 @@ public class StateTransfer {
      * @param chunkEnd   End address of batch of missing entries.
      * @return Iterable list of partitioned entries.
      */
-    private static List<Long> getMissingEntriesChunk(Layout layout,
+    public static List<Long> getMissingEntriesChunk(Layout layout,
                                                      CorfuRuntime runtime,
                                                      String endpoint,
                                                      long chunkStart,

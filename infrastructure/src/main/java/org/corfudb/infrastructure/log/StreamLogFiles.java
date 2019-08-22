@@ -108,7 +108,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     // Resource quota to track the log size
     private ResourceQuota logSizeQuota;
 
-    public StreamLogFiles(Path logDir, StreamLogDataStore dataStore, String logSizeLimitPercentageParam, boolean noVerify){
+    public StreamLogFiles(Path logDir, StreamLogDataStore dataStore, String logSizeLimitPercentageParam, boolean noVerify) {
         this.logDir = logDir;
         writeChannels = new ConcurrentHashMap<>();
         channelsToSync = new HashSet<>();
@@ -209,11 +209,9 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * <p>
      * consecutive segments from [startSegment, endSegment]
      */
-    private void initializeLogMetadata() {
-        log.info("Starting \n\n\n");
+    public void initializeLogMetadata() {
         long startingSegment = getStartingSegment();
         long tailSegment = dataStore.getTailSegment();
-
         long start = System.currentTimeMillis();
         // Scan the log in reverse, this will ease stream trim mark resolution (as we require the
         // END records of a checkpoint which are always the last entry in this stream)
@@ -222,6 +220,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         for (long currentSegment = tailSegment; currentSegment >= startingSegment; currentSegment--) {
 
             long segmentStart = System.currentTimeMillis();
+            log.info("Inside");
             SegmentHandle segment = getSegmentHandleForAddress(currentSegment * RECORDS_PER_LOG_FILE + 1);
 
             try {
@@ -315,6 +314,28 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     public TailsResponse getAllTails() {
         Map<UUID, Long> tails = new HashMap<>(logMetadata.getStreamTails());
         return new TailsResponse(logMetadata.getGlobalTail(), tails);
+    }
+
+    public void openSocketAndReceiveData() {
+
+        try {
+            FileWriter fileWriter = new FileWriter("/tmp/1/log/0.log");
+            FileReceiver fileReceiver = new FileReceiver(8888, fileWriter);
+            fileReceiver.receive();
+        } catch (IOException e) {
+            log.error("Open socket error: ", e);
+        }
+
+    }
+
+    public void initiateTransfer() {
+        try {
+            FileSender fileSender = new FileSender(8888, "localhost");
+            FileReader fileReader = new FileReader(fileSender, "/tmp/0/log/0.log");
+            fileReader.read();
+        } catch (IOException e) {
+            log.error("Transfer error: ", e);
+        }
     }
 
     private void syncTailSegment(long address) {
@@ -526,9 +547,6 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         return metadata;
     }
 
-    private void transferFile(String fileName) throws IOException{
-
-    }
 
     private String getDataCorruptionErrorMessage(
             String message, FileChannel fileChannel, String segmentFile) throws IOException {
@@ -653,7 +671,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     }
 
 
-    public void readMetadataSpace(SegmentHandle segment) throws IOException{
+    public void readMetadataSpace(SegmentHandle segment) throws IOException {
         FileChannel fileChannel = segment.getWriteChannel();
         fileChannel.position(0);
 
@@ -763,9 +781,11 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     private FileChannel getChannel(String filePath, boolean readOnly) throws IOException {
         if (readOnly) {
             if (!new File(filePath).exists()) {
+                log.info("Could not open on readonly");
                 throw new FileNotFoundException(filePath);
             }
 
+            log.info("Opening on readonly");
             return FileChannel.open(
                     FileSystems.getDefault().getPath(filePath),
                     EnumSet.of(StandardOpenOption.READ)
@@ -785,6 +805,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             syncDirectory(segFile.getParent());
             return channel;
         } catch (FileAlreadyExistsException ex) {
+            log.info("file already exists");
             return FileChannel.open(
                     FileSystems.getDefault().getPath(filePath),
                     EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE)
@@ -806,7 +827,9 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         filePath += segment;
         filePath += ".log";
 
+        log.info("File path: {}", filePath);
         SegmentHandle handle = writeChannels.computeIfAbsent(filePath, a -> {
+            log.info("Start compute if absent");
             FileChannel writeCh = null;
             FileChannel readCh = null;
 
@@ -814,11 +837,13 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
                 writeCh = getChannel(a, false);
                 readCh = getChannel(a, true);
 
+                log.info("Get handle");
                 SegmentHandle sh = new SegmentHandle(segment, writeCh, readCh, a);
                 // The first time we open a file we should read to the end, to load the
                 // map of entries we already have.
                 // Once the segment address space is loaded, it should be ready to accept writes.
                 long start = System.currentTimeMillis();
+                log.info("Before read");
                 readAddressSpace(sh);
                 return sh;
             } catch (IOException e) {

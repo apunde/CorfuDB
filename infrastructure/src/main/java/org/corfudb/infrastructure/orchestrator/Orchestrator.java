@@ -7,6 +7,7 @@ import io.netty.channel.ChannelHandlerContext;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.IServerRouter;
 import org.corfudb.infrastructure.ServerContext;
+import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.infrastructure.orchestrator.workflows.AddNodeWorkflow;
 import org.corfudb.infrastructure.orchestrator.workflows.ForceRemoveWorkflow;
 import org.corfudb.infrastructure.orchestrator.workflows.HealNodeWorkflow;
@@ -106,6 +107,7 @@ public class Orchestrator {
 
         OrchestratorMsg orchReq = msg.getPayload();
         IWorkflow workflow;
+        String currentEndpoint = null;
         switch (orchReq.getRequest().getType()) {
             case QUERY:
                 query(msg, ctx, r);
@@ -119,7 +121,8 @@ public class Orchestrator {
                 dispatch(workflow, msg, ctx, r);
                 break;
             case HEAL_NODE:
-                workflow = new HealNodeWorkflow((HealNodeRequest) orchReq.getRequest());
+                currentEndpoint = serverContext.getLocalEndpoint();
+                workflow = new HealNodeWorkflow((HealNodeRequest) orchReq.getRequest(), currentEndpoint);
                 dispatch(workflow, msg, ctx, r);
                 break;
             case FORCE_REMOVE_NODE:
@@ -127,7 +130,10 @@ public class Orchestrator {
                 dispatch(workflow, msg, ctx, r);
                 break;
             case RESTORE_REDUNDANCY_MERGE_SEGMENTS:
-                workflow = new RestoreRedundancyMergeSegmentsWorkflow((RestoreRedundancyMergeSegmentsRequest) orchReq.getRequest());
+                currentEndpoint = serverContext.getLocalEndpoint();
+                RestoreRedundancyMergeSegments rr = new RestoreRedundancyMergeSegments();
+                rr.setLocalEndpoint(currentEndpoint);
+                workflow = new RestoreRedundancyMergeSegmentsWorkflow((RestoreRedundancyMergeSegmentsRequest) orchReq.getRequest(), rr);
                 dispatch(workflow, msg, ctx, r);
                 break;
             default:

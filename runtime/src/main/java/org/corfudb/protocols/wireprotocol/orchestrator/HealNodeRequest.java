@@ -17,6 +17,7 @@ import org.corfudb.util.JsonUtils;
  */
 public class HealNodeRequest implements CreateRequest {
 
+
     @Getter
     public String endpoint;
 

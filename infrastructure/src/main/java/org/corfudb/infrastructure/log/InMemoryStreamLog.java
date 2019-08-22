@@ -54,6 +54,16 @@ public class InMemoryStreamLog implements StreamLog, StreamLogWithRankedAddressS
     }
 
     @Override
+    public void initiateTransfer() {
+
+    }
+
+    @Override
+    public void initializeLogMetadata() {
+
+    }
+
+    @Override
     public synchronized void append(long address, LogData entry) {
         if(isTrimmed(address)) {
             throw new OverwriteException(OverwriteCause.TRIM);
@@ -189,6 +199,11 @@ public class InMemoryStreamLog implements StreamLog, StreamLogWithRankedAddressS
                 trimmed.remove(address);
             }
         }
+    }
+
+    @Override
+    public void openSocketAndReceiveData() {
+
     }
 
     @Override

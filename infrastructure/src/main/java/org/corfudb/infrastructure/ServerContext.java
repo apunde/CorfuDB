@@ -119,7 +119,7 @@ public class ServerContext implements AutoCloseable {
     @Getter (AccessLevel.PACKAGE)
     private final NodeLocator nodeLocator;
 
-    @Getter (AccessLevel.PACKAGE)
+    @Getter
     private final String localEndpoint;
 
     @Getter

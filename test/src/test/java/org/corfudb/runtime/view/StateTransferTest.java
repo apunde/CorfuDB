@@ -80,12 +80,13 @@ public class StateTransferTest extends AbstractViewTest {
     // Segment1: 0 -> Large number
     // Segment2:
     @Test
-    public void verifyLargeStateTransferAndMerge() throws Exception{
+    public void verifyLargeStateTransferAndMerge() throws Exception {
 
         ServerContext sc1 = new ServerContextBuilder()
                 .setMemory(false)
                 .setSingle(false)
                 .setLogPath("/tmp/0")
+                .setAddress("test")
                 .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
                 .setPort(SERVERS.PORT_0).build();
 
@@ -93,6 +94,7 @@ public class StateTransferTest extends AbstractViewTest {
                 .setMemory(false)
                 .setSingle(false)
                 .setLogPath("/tmp/1")
+                .setAddress("test")
                 .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
                 .setPort(SERVERS.PORT_1).build();
 
@@ -100,6 +102,7 @@ public class StateTransferTest extends AbstractViewTest {
         addServer(SERVERS.PORT_1, sc2);
 
         final long writtenAddressBatch = 2822L;
+
         Layout testLayout = new TestLayoutBuilder()
                 .setEpoch(1L)
                 .addLayoutServer(SERVERS.PORT_0)
@@ -128,6 +131,7 @@ public class StateTransferTest extends AbstractViewTest {
 
 
     }
+
     /**
      * The test first creates a layout with 2 segments.
      * Segment 1: 0 -> 3 (exclusive) Node 0
@@ -254,26 +258,26 @@ public class StateTransferTest extends AbstractViewTest {
      * Segment 1: 0 -> 3 (exclusive) Node 0
      * Segment 2: 3 -> 6 (exclusive) Node 0, Node 1
      * Segment 3: 6 -> infinity (exclusive) Node 0, Node 1
-     *
+     * <p>
      * Now a failed node, Node 2 is healed back which results in the following intermediary
      * states.
-     *
+     * <p>
      * First, last segment will be split.
      * Segment 1: 0 -> 3 (exclusive) Node 0
      * Segment 2: 3 -> 6 (exclusive) Node 0, Node 1
      * Segment 3: 6 -> 9 (exclusive) Node 0, Node 1
      * Segment 4: 9 -> infinity (exclusive) Node 0, Node 1, Node 2
-     *
+     * <p>
      * Then, healing carries out a cleaning task of merging the segments.
      * (transfer segment 1 to Node 1 and merge segments 1 and 2.)
      * Segment 1: 0 -> 6 (exclusive) Node 0, Node 1
      * Segment 2: 6 -> 9 (exclusive) Node 0, Node 1
      * Segment 3: 9 -> infinity (exclusive) Node 0, Node 1, Node 2
-     *
+     * <p>
      * And then:
      * Segment 1: 0 -> 9 (exclusive) Node 0, Node 1
      * Segment 2: 9 -> infinity (exclusive) Node 0, Node 1, Node 2
-     *
+     * <p>
      * At the end, the stable layout will be the following:
      * Segment 1: 0 -> infinity (exclusive) Node 0, Node 1, Node 2
      * Finally the stable layout is verified as well as the state transfer is verified by asserting
@@ -396,16 +400,16 @@ public class StateTransferTest extends AbstractViewTest {
     /**
      * This test verifies that if the adjacent segments have same number of servers,
      * state transfer is not happened, while merge segments can succeed.
-     *
+     * <p>
      * The test first creates a layout with 3 segments.
-     *
+     * <p>
      * Segment 1: 0 -> 5 (exclusive) Node 0, Node 1
      * Segment 2: 5 -> 10 (exclusive) Node 0, Node 1
      * Segment 3: 10 -> infinity (exclusive) Node 0, Node 1
-     *
+     * <p>
      * Now drop all the read response from Node 1, so that we make sure state transfer
      * will fail if it happens.
-     *
+     * <p>
      * Finally verify merge segments succeed with only one segment in the new layout.
      */
     @Test

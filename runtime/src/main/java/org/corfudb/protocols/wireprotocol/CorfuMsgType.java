@@ -14,6 +14,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
+import java.util.ArrayList;
 
 /**
  * Created by mwei on 8/8/16.
@@ -72,7 +73,8 @@ public enum CorfuMsgType {
     LOG_ADDRESS_SPACE_RESPONSE(49, new TypeToken<CorfuPayloadMsg<StreamsAddressResponse>>(){}),
     LOG_SIZE_REQUEST(99, TypeToken.of(CorfuMsg.class)),
     LOG_SIZE_RESPONSE(100, new TypeToken<CorfuPayloadMsg<Long>>(){}),
-
+    LOG_TRANSFER_REQUEST(101, new TypeToken<CorfuPayloadMsg<String>>(){}),
+    LOG_OPEN_SOCKET_REQUEST(103, TypeToken.of(CorfuMsg.class)),
     WRITE_OK(50, TypeToken.of(CorfuMsg.class)),
     ERROR_TRIMMED(51, TypeToken.of(CorfuMsg.class)),
     ERROR_OVERWRITE(52, new TypeToken<CorfuPayloadMsg<Integer>>(){}, true),

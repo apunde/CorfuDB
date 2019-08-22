@@ -13,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 
 import lombok.Getter;
 
+import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.ILogData;
@@ -205,6 +206,20 @@ public class LogUnitClient extends AbstractClient {
      */
     public CompletableFuture<TailsResponse> getAllTails() {
         return sendMessageWithFuture(CorfuMsgType.TAIL_REQUEST.payloadMsg(TailsRequest.ALL_STREAMS_TAIL));
+    }
+
+    /**
+     * Initiate a transfer to remote endpoint
+     */
+    public CompletableFuture<Void> initiateTransfer(String toEndpoint){
+        return sendMessageWithFuture(CorfuMsgType.LOG_TRANSFER_REQUEST.payloadMsg(toEndpoint));
+    }
+
+    /**
+     * Tell the remote to open a socket
+     */
+    public void openServerSocketChannel(){
+        sendMessage(CorfuMsgType.LOG_OPEN_SOCKET_REQUEST.msg());
     }
 
     /**

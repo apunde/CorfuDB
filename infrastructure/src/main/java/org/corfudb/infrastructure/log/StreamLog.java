@@ -34,6 +34,10 @@ public interface StreamLog {
      */
     void append(List<LogData> entries);
 
+    void initiateTransfer();
+
+    void initializeLogMetadata();
+
     /**
      * Given an address, read the corresponding stream entry.
      * @param address  address to read from the log
@@ -53,6 +57,7 @@ public interface StreamLog {
     void compact();
 
 
+    void openSocketAndReceiveData();
     /**
      * Get the global tail and stream tails.
      */

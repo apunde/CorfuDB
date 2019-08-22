@@ -1,8 +1,9 @@
 package org.corfudb.infrastructure.log;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
-import sun.rmi.rmic.Constants;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -11,25 +12,27 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 
+@Slf4j
 public final class FileWriter {
     private final FileChannel channel;
-    private final int TRANSFER_MAX_SIZE = 100;
 
     FileWriter(final String path) throws IOException {
-        if (StringUtils.isEmpty(path)) {
+        if (path.isEmpty()) {
             throw new IllegalArgumentException("path required");
         }
-
+        File file = new File(path);
+        if (file.exists()){
+            file.delete();
+        }
         this.channel = FileChannel.open(Paths.get(path), StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
     }
 
-    void transfer(final SocketChannel channel, final long bytes) throws IOException {
+    void transfer(final SocketChannel channel) throws IOException {
         assert !Objects.isNull(channel);
+        long position = 0L;
 
-        long position = 0l;
-        while (position < bytes) {
-            position += this.channel.transferFrom(channel, position, TRANSFER_MAX_SIZE);
-        }
+        this.channel.transferFrom(channel, position, Long.MAX_VALUE);
+        System.out.println("Finished writing");
     }
 
     int write(final ByteBuffer buffer, long position) throws IOException {

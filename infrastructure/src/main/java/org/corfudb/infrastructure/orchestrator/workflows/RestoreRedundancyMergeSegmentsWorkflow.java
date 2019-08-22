@@ -39,10 +39,10 @@ public class RestoreRedundancyMergeSegmentsWorkflow implements IWorkflow {
      *
      * @param request request to restore redundancy and merge a segment.
      */
-    public RestoreRedundancyMergeSegmentsWorkflow(RestoreRedundancyMergeSegmentsRequest request) {
+    public RestoreRedundancyMergeSegmentsWorkflow(RestoreRedundancyMergeSegmentsRequest request, RestoreRedundancyMergeSegments restoreRedundancyAndMergeSegments) {
         this.id = UUID.randomUUID();
         this.request = request;
-        this.actions = ImmutableList.of(new RestoreRedundancyMergeSegments());
+        this.actions = ImmutableList.of(restoreRedundancyAndMergeSegments);
     }
 
     @Override

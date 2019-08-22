@@ -1,5 +1,6 @@
 package org.corfudb.infrastructure.log;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 
 import java.io.IOException;
@@ -8,12 +9,13 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 
+@Slf4j
 public final class FileReader {
     private final FileChannel channel;
     private final FileSender sender;
 
     FileReader(final FileSender sender, final String path) throws IOException {
-        if (Objects.isNull(sender) || StringUtils.isEmpty(path)) {
+        if (Objects.isNull(sender) || path.isEmpty()) {
             throw new IllegalArgumentException("sender and path required");
         }
 
@@ -25,6 +27,7 @@ public final class FileReader {
         try {
             transfer();
         } finally {
+            log.info("Transfer finished, closing.");
             close();
         }
     }
@@ -35,6 +38,6 @@ public final class FileReader {
     }
 
     private void transfer() throws IOException {
-        this.sender.transfer(this.channel, 0l, this.channel.size());
+        this.sender.transfer(this.channel);
     }
 }
