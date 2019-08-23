@@ -130,8 +130,7 @@ public class UndoTest extends AbstractTransactionsTest {
                 .getObjectsView()
                 .build()
                 .setStreamName("test")
-                .setTypeToken(new TypeToken<SMRMap<Integer, String>>() {
-                })
+                .setTypeToken(new TypeToken<SMRMap<Integer, String>>() {})
                 .open();
         final int specialKey = 10;
         final String normalValue = "z", specialValue = "y";

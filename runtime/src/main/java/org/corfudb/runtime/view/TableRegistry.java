@@ -1,15 +1,16 @@
 package org.corfudb.runtime.view;
 
 import com.google.common.reflect.TypeToken;
-import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
-import com.google.protobuf.Descriptors;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.protobuf.Message;
-
 import java.lang.reflect.InvocationTargetException;
-import java.util.*;
+import java.util.Collection;
+import java.util.Deque;
+import java.util.LinkedList;
+import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
@@ -19,12 +20,16 @@ import org.corfudb.runtime.CorfuStoreMetadata.TableDescriptors;
 import org.corfudb.runtime.CorfuStoreMetadata.TableName;
 import org.corfudb.runtime.collections.CorfuRecord;
 import org.corfudb.runtime.collections.CorfuTable;
+import org.corfudb.runtime.collections.PersistedStreamingMap;
+import org.corfudb.runtime.collections.StreamingMap;
+import org.corfudb.runtime.collections.StreamingMapDecorator;
 import org.corfudb.runtime.collections.Table;
 import org.corfudb.runtime.collections.TableOptions;
 import org.corfudb.runtime.object.transactions.TransactionType;
 import org.corfudb.util.serializer.ISerializer;
 import org.corfudb.util.serializer.ProtobufSerializer;
 import org.corfudb.util.serializer.Serializers;
+import org.rocksdb.Options;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -235,6 +240,12 @@ public class TableRegistry {
         }
     }
 
+    private Options getPersistentMapOptions() {
+        final Options options = new Options();
+        options.setCreateIfMissing(true);
+        return options;
+    }
+
     /**
      * Opens a Corfu table with the specified options.
      *
@@ -258,7 +269,7 @@ public class TableRegistry {
                              @Nonnull final Class<K> kClass,
                              @Nonnull final Class<V> vClass,
                              @Nullable final Class<M> mClass,
-                             @Nonnull final TableOptions tableOptions)
+                             @Nonnull final TableOptions<K, V> tableOptions)
             throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 
         // Register the schemas to schema table.
@@ -274,7 +285,11 @@ public class TableRegistry {
             addTypeToClassMap(defaultMetadataMessage);
         }
 
-        String fullyQualifiedTableName = getFullyQualifiedTableName(namespace, tableName);
+        final String fullyQualifiedTableName = getFullyQualifiedTableName(namespace, tableName);
+        final StreamingMap<K, V> streamingMap = tableOptions.getPersistentDataPath()
+                .map(path -> (StreamingMap<K, V>) new PersistedStreamingMap<K, V>(
+                        path, getPersistentMapOptions(), protobufSerializer, this.runtime))
+                .orElseGet(StreamingMapDecorator::new);
 
         // Open and return table instance.
         Table<K, V, M> table = new Table<>(
@@ -283,7 +298,8 @@ public class TableRegistry {
                 defaultValueMessage,
                 defaultMetadataMessage,
                 this.runtime,
-                this.protobufSerializer);
+                this.protobufSerializer,
+                streamingMap);
         tableMap.put(fullyQualifiedTableName, (Table<Message, Message, Message>) table);
 
         registerTable(namespace, tableName, kClass, vClass, mClass);
