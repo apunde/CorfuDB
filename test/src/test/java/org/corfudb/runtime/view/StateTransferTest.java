@@ -128,7 +128,19 @@ public class StateTransferTest extends AbstractViewTest {
 
         bootstrapAllServers(testLayout);
         Thread.sleep(50000000);
+    }
 
+    @Test
+    public void testSmallZeroTransfer() throws Exception {
+        ServerContext sc1 = new ServerContextBuilder()
+                .setMemory(false)
+                .setSingle(false)
+                .setLogPath(PARAMETERS.TEST_TEMP_DIR)
+                .setAddress("test")
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                .setPort(SERVERS.PORT_0).build();
+
+        addServer(SERVERS.PORT_0, sc1);
 
     }
 

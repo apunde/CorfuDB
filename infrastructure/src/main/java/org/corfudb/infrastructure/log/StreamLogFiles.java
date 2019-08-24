@@ -220,7 +220,6 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         for (long currentSegment = tailSegment; currentSegment >= startingSegment; currentSegment--) {
 
             long segmentStart = System.currentTimeMillis();
-            log.info("Inside");
             SegmentHandle segment = getSegmentHandleForAddress(currentSegment * RECORDS_PER_LOG_FILE + 1);
 
             try {
@@ -827,9 +826,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         filePath += segment;
         filePath += ".log";
 
-        log.info("File path: {}", filePath);
         SegmentHandle handle = writeChannels.computeIfAbsent(filePath, a -> {
-            log.info("Start compute if absent");
             FileChannel writeCh = null;
             FileChannel readCh = null;
 
@@ -837,13 +834,11 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
                 writeCh = getChannel(a, false);
                 readCh = getChannel(a, true);
 
-                log.info("Get handle");
                 SegmentHandle sh = new SegmentHandle(segment, writeCh, readCh, a);
                 // The first time we open a file we should read to the end, to load the
                 // map of entries we already have.
                 // Once the segment address space is loaded, it should be ready to accept writes.
                 long start = System.currentTimeMillis();
-                log.info("Before read");
                 readAddressSpace(sh);
                 return sh;
             } catch (IOException e) {

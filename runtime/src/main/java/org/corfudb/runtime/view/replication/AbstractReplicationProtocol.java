@@ -41,8 +41,7 @@ public abstract class AbstractReplicationProtocol implements IReplicationProtoco
     public ILogData read(RuntimeLayout runtimeLayout, long globalAddress) {
         try {
             return holeFillPolicy
-                    .peekUntilHoleFillRequired(globalAddress,
-                            a -> peek(runtimeLayout, a));
+                    .peekUntilHoleFillRequired(globalAddress, a -> peek(runtimeLayout, a));
         } catch (HoleFillRequiredException e) {
             log.debug("HoleFill[{}] due to {}", globalAddress, e.getMessage());
             holeFill(runtimeLayout, globalAddress);
