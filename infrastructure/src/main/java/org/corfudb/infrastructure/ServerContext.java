@@ -209,6 +209,12 @@ public class ServerContext implements AutoCloseable {
         return threadCount == null ? 4 : threadCount;
     }
 
+    public boolean isGCCompatibleStateTransfer(){
+        return Optional
+                .ofNullable(getServerConfig(Boolean.class, "--gc-compatible-st"))
+                .orElse(false);
+    }
+
     /**
      * Cleanup the DataStore files with names that are prefixes of the specified
      * fileName when so that the number of these files don't exceed the user-defined

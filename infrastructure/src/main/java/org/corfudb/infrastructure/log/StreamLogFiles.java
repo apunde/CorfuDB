@@ -549,9 +549,19 @@ public class StreamLogFiles implements StreamLog {
         }
     }
 
+    public LogData readGarbage(long address) {
+        GarbageLogSegment garbageLogSegment = segmentManager.getGarbageLogSegment(address);
+        return garbageLogSegment.read(address);
+    }
+
     @Override
     public long getGlobalCompactionMark() {
         return dataStore.getGlobalCompactionMark();
+    }
+
+    @Override
+    public void updateGlobalCompactionMark(long globalCompactionMark) {
+        dataStore.updateGlobalCompactionMark(globalCompactionMark);
     }
 
     @Override

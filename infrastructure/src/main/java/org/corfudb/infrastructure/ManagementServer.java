@@ -5,6 +5,7 @@ import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.management.ClusterStateContext;
 import org.corfudb.infrastructure.management.ClusterStateContext.HeartbeatCounter;
 import org.corfudb.infrastructure.management.FailureDetector;
@@ -118,8 +119,9 @@ public class ManagementServer extends AbstractServer {
      * Returns new ManagementServer.
      *
      * @param serverContext context object providing parameters and objects
+     * @param streamLog an instance of streamlog for the state transfer.
      */
-    public ManagementServer(ServerContext serverContext) {
+    public ManagementServer(ServerContext serverContext, StreamLog streamLog) {
         this.serverContext = serverContext;
 
         this.executor = Executors.newFixedThreadPool(serverContext.getManagementServerThreadCount(),
@@ -149,7 +151,7 @@ public class ManagementServer extends AbstractServer {
                 corfuRuntime, serverContext, clusterContext, failureDetector,managementLayout
         );
 
-        orchestrator = new Orchestrator(corfuRuntime, serverContext);
+        orchestrator = new Orchestrator(corfuRuntime, serverContext, streamLog);
     }
 
     /**
@@ -345,6 +347,7 @@ public class ManagementServer extends AbstractServer {
             return;
         }
 
+        boolean gcEnabled = serverContext.isGCCompatibleStateTransfer();
         boolean result = false;
         if (healingLock.tryLock()) {
             try {
@@ -354,7 +357,7 @@ public class ManagementServer extends AbstractServer {
                 result = ReconfigurationEventHandler.handleHealing(
                         managementAgent.getCorfuRuntime(),
                         unresponsiveHealedNodes,
-                        retryWorkflowQueryTimeout);
+                        retryWorkflowQueryTimeout, gcEnabled);
             } finally {
                 healingLock.unlock();
             }

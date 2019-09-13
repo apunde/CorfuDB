@@ -17,6 +17,8 @@ import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
 import org.corfudb.runtime.view.Layout;
+import org.corfudb.runtime.view.Layout.LayoutSegment;
+import org.corfudb.runtime.view.Layout.LayoutStripe;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.retry.ExponentialBackoffRetry;
@@ -50,6 +52,7 @@ public class StateTransfer {
             .serverCacheable(false)
             .build();
 
+
     /**
      * Fetch and propagate the trimMark to the new/healing nodes. Else, a FastLoader reading from
      * them will have to mark all the already trimmed entries as holes.
@@ -64,7 +67,7 @@ public class StateTransfer {
     public static void transfer(Layout layout,
                                 @NonNull String endpoint,
                                 CorfuRuntime runtime,
-                                Layout.LayoutSegment segment) throws InterruptedException {
+                                LayoutSegment segment) throws InterruptedException {
 
         int chunkSize = runtime.getParameters().getBulkReadSize();
         final AtomicInteger overwriteRetries = new AtomicInteger();

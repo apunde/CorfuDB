@@ -14,6 +14,7 @@ import org.corfudb.protocols.wireprotocol.KnownAddressResponse;
 import org.corfudb.protocols.wireprotocol.ReadRequest;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
+import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferResponseMsg;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.OutOfSpaceException;
@@ -228,6 +229,19 @@ public class LogUnitHandler implements IClient, IHandler<LogUnitClient> {
     @ClientHandler(type = CorfuMsgType.KNOWN_ADDRESS_RESPONSE)
     private static Object handleKnownAddressesResponse(CorfuPayloadMsg<KnownAddressResponse> msg,
                                                        ChannelHandlerContext ctx, IClientRouter r) {
+        return msg.getPayload();
+    }
+
+    /**
+     * Handle a STATE_TRANSFER_RESPONSE message.
+     * @param msg Incoming Message
+     * @param ctx Context
+     * @param r   Router
+     * @return    StateTransferResponseMsg payload with the status of a current segment.
+     */
+    @ClientHandler(type = CorfuMsgType.STATE_TRANSFER_RESPONSE)
+    private static Object handleStateTransferResponse(CorfuPayloadMsg<StateTransferResponseMsg> msg,
+                                                      ChannelHandlerContext ctx, IClientRouter r) {
         return msg.getPayload();
     }
 }

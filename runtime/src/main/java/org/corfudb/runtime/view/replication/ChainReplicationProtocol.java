@@ -101,21 +101,9 @@ public class ChainReplicationProtocol extends AbstractReplicationProtocol {
                                        boolean waitForWrite,
                                        boolean cacheOnServer) {
 
-        // A map of log unit server endpoint to addresses it's responsible for
-        Map<String, List<Long>> serverAddressMap = new HashMap<>();
-
-        for (Long address : addresses) {
-            List<String> logServers = runtimeLayout.getLayout().getStripe(address).getLogServers();
-            String logServer = logServers.get(logServers.size() - 1);
-            List<Long> addressList = serverAddressMap.computeIfAbsent(logServer, s -> new ArrayList<>());
-            addressList.add(address);
-        }
-
         // Send read requests to log unit servers in parallel
-        List<CompletableFuture<ReadResponse>> futures = serverAddressMap.entrySet().stream()
-                .map(entry -> runtimeLayout.getLogUnitClient(entry.getKey())
-                        .readAll(entry.getValue(), cacheOnServer))
-                .collect(Collectors.toList());
+        List<CompletableFuture<ReadResponse>> futures =
+                aggregateReadResponses(runtimeLayout, addresses, cacheOnServer);
 
         // Merge the read responses from different log unit servers
         Map<Long, LogData> readResult = futures.stream()
@@ -126,6 +114,75 @@ public class ChainReplicationProtocol extends AbstractReplicationProtocol {
                 });
 
         return waitOrHoleFill(runtimeLayout, readResult, waitForWrite);
+    }
+
+    /**
+     * This method is the same as the readAll, but it also retains the max compaction mark.
+     * @param runtimeLayout the RuntimeLayout stamped with layout to use for the read.
+     * @param addresses a list of addresses to read from.
+     * @param waitForWrite flag whether wait for write is required or hole fill directly.
+     * @param cacheOnServer whether the fetch results should be cached on log unit server.
+     * @return result with a map of the read addresses + global compaction mark.
+     */
+    public ReadResult readAllWithCompactionMark(RuntimeLayout runtimeLayout,
+                                                List<Long> addresses,
+                                                boolean waitForWrite,
+                                                boolean cacheOnServer){
+        // Send read requests to log unit servers in parallel
+        List<CompletableFuture<ReadResponse>> futures =
+                aggregateReadResponses(runtimeLayout, addresses, cacheOnServer);
+
+        PrefilledReadResult aggregatedResult = futures.stream().map(future -> {
+            ReadResponse readResponse = CFUtils.getUninterruptibly(future);
+            return new PrefilledReadResult(readResponse.getAddresses(), readResponse.getCompactionMark());
+        }).reduce(new PrefilledReadResult(new HashMap<>(), -1L), (result1, result2) -> {
+            Map<Long, LogData> map1 = result1.getData();
+
+            long compactionMark1 = result1.getCompactionMark();
+
+            Map<Long, LogData> map2 = result2.getData();
+
+            long compactionMark2 = result2.getCompactionMark();
+
+            map1.putAll(map2);
+
+            long largestCompactionMark = Math.max(compactionMark1, compactionMark2);
+
+            return new PrefilledReadResult(map1, largestCompactionMark);
+        });
+
+
+        return new ReadResult(waitOrHoleFill(
+                runtimeLayout,
+                aggregatedResult.getData(),
+                waitForWrite),
+                aggregatedResult.getCompactionMark());
+    }
+
+    /**
+     * Aggregates read responses from the remote log units.
+     * @param runtimeLayout he RuntimeLayout stamped with layout to use for the read.
+     * @param addresses a list of addresses to read from.
+     * @param cacheOnServer whether the fetch results should be cached on log unit server.
+     * @return a list of completable futures of the read responses.
+     */
+    private List<CompletableFuture<ReadResponse>> aggregateReadResponses(RuntimeLayout runtimeLayout,
+                                                                         List<Long> addresses,
+                                                                         boolean cacheOnServer){
+        Map<String, List<Long>> serverAddressMap = new HashMap<>();
+
+        for (Long address : addresses) {
+            List<String> logServers = runtimeLayout.getLayout().getStripe(address).getLogServers();
+            String logServer = logServers.get(logServers.size() - 1);
+            List<Long> addressList = serverAddressMap.computeIfAbsent(logServer, s -> new ArrayList<>());
+            addressList.add(address);
+        }
+
+        // Send read requests to log unit servers in parallel
+       return serverAddressMap.entrySet().stream()
+                .map(entry -> runtimeLayout.getLogUnitClient(entry.getKey())
+                        .readAll(entry.getValue(), cacheOnServer))
+                .collect(Collectors.toList());
     }
 
     private Map<Long, ILogData> waitOrHoleFill(RuntimeLayout runtimeLayout,

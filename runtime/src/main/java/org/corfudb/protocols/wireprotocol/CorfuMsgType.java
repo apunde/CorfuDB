@@ -6,6 +6,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorMsg;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorResponse;
+import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
+import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferResponseMsg;
 import org.corfudb.runtime.view.Layout;
 
 import java.lang.invoke.LambdaMetafactory;
@@ -60,8 +62,11 @@ public enum CorfuMsgType {
     READ_RESPONSE(32, new TypeToken<CorfuPayloadMsg<ReadResponse>>() {}),
     MULTIPLE_READ_REQUEST(33, new TypeToken<CorfuPayloadMsg<MultipleReadRequest>>() {}),
     PREFIX_TRIM(34, new TypeToken<CorfuPayloadMsg<TrimRequest>>() {}),
+    STATE_TRANSFER_REQUEST(35, new TypeToken<CorfuPayloadMsg<StateTransferRequestMsg>>() {}),
+    STATE_TRANSFER_RESPONSE(36, new TypeToken<CorfuPayloadMsg<StateTransferResponseMsg>>() {}),
     MULTIPLE_GARBAGE_REQUEST(37, new TypeToken<CorfuPayloadMsg<ReadRequest>>() {}),
     MULTIPLE_GARBAGE_WRITE(38, new TypeToken<CorfuPayloadMsg<RangeWriteMsg>>() {}),
+
     TAIL_REQUEST(41, new TypeToken<CorfuPayloadMsg<TailsRequest>>(){}),
     TAIL_RESPONSE(42, new TypeToken<CorfuPayloadMsg<TailsResponse>>(){}),
     FLUSH_CACHE(44, TypeToken.of(CorfuMsg.class), true),

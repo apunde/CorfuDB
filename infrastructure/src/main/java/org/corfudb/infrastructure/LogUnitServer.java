@@ -38,7 +38,6 @@ import org.corfudb.util.Utils;
 
 import java.lang.invoke.MethodHandles;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -141,6 +140,20 @@ public class LogUnitServer extends AbstractServer {
         dataCache = new LogUnitServerCache(config, streamLog);
         batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
 
+
+        if (config.enableCompaction) {
+            streamLog.startCompactor();
+        }
+    }
+
+    public LogUnitServer(ServerContext serverContext, StreamLog streamLog){
+        this.serverContext = serverContext;
+        this.executor = Executors.newFixedThreadPool(serverContext.getLogunitThreadCount(),
+                new ServerThreadFactory("LogUnit-", new ServerThreadFactory.ExceptionHandler()));
+        this.streamLog = streamLog;
+        this.config = LogUnitServerConfig.parse(serverContext.getServerConfig());
+        this.dataCache = new LogUnitServerCache(config, streamLog);
+        this.batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
         if (config.enableCompaction) {
             streamLog.startCompactor();
         }
@@ -334,6 +347,22 @@ public class LogUnitServer extends AbstractServer {
         }
     }
 
+    @ServerHandler(type = CorfuMsgType.MULTIPLE_GARBAGE_REQUEST)
+    public void multiGarbageRead(CorfuPayloadMsg<MultipleReadRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.trace("multiGarbageRead: {}", msg.getPayload().getAddresses());
+        ReadResponse readResponse = new ReadResponse();
+        for(Long address: msg.getPayload().getAddresses()){
+            LogData logData = streamLog.readGarbage(address);
+            if(logData == null){
+                readResponse.put(address, LogData.getEmpty(address));
+            }
+            else{
+                readResponse.put(address, logData);
+            }
+            r.sendResponse(ctx, msg, CorfuMsgType.READ_RESPONSE.payloadMsg(readResponse));
+        }
+    }
+
     /**
      * Handles requests for known entries in specified range.
      * This is used by state transfer to catch up only the remainder of the segment.
@@ -423,7 +452,6 @@ public class LogUnitServer extends AbstractServer {
             r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
         }
     }
-
 
     /**
      * Shutdown the server.

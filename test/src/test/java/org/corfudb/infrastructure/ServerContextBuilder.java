@@ -47,6 +47,7 @@ public class ServerContextBuilder {
     String prefix = "";
     String retention = "1000";
 
+    boolean gcCompatibleStateTransfer = false;
     boolean noCompaction = true;
     String compactionPolicyType = "SNAPSHOT_LENGTH_FIRST";
     // Following two parameters can be arbitrary as compaction is only
@@ -83,6 +84,7 @@ public class ServerContextBuilder {
                 .put("--address", address)
                 .put("--cache-heap-ratio", cacheSizeHeapRatio)
                 .put("--no-compaction", noCompaction)
+                .put("--gc-compatible-st", gcCompatibleStateTransfer)
                 .put("--compaction-policy", compactionPolicyType)
                 .put("--compaction-initial-delay", compactionInitialDelay)
                 .put("--compaction-period", compactionPeriod)

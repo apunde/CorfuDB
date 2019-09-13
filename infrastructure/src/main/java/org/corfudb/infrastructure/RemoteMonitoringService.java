@@ -16,6 +16,7 @@ import org.corfudb.infrastructure.management.FailureDetector;
 import org.corfudb.infrastructure.management.PollReport;
 import org.corfudb.infrastructure.management.ReconfigurationEventHandler;
 import org.corfudb.infrastructure.management.failuredetector.ClusterGraph;
+import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.protocols.wireprotocol.ClusterState;
 import org.corfudb.protocols.wireprotocol.NodeState;
 import org.corfudb.protocols.wireprotocol.SequencerMetrics;
@@ -423,7 +424,17 @@ public class RemoteMonitoringService implements MonitoringService {
     private DetectorTask restoreRedundancyAndMergeSegments(Layout layout) {
         int segmentsCount = layout.getSegments().size();
 
-        if (segmentsCount == 1) {
+        String localEndpoint = serverContext.getLocalEndpoint();
+
+        boolean nodePresentInAllSegments = layout
+                .getSegments()
+                .stream()
+                .allMatch(segment -> segment
+                        .getFirstStripe()
+                        .getLogServers()
+                        .contains(localEndpoint));
+
+        if (segmentsCount == 1 || nodePresentInAllSegments) {
             log.debug("No segments to merge. Skipping step.");
             return DetectorTask.SKIPPED;
         } else if (!mergeSegmentsTask.isDone()) {
@@ -431,11 +442,13 @@ public class RemoteMonitoringService implements MonitoringService {
             return DetectorTask.SKIPPED;
         }
 
+        boolean gcEnabled = serverContext.isGCCompatibleStateTransfer();
         log.debug("Number of segments present: {}. Spawning task to merge segments.", segmentsCount);
 
         Supplier<Boolean> redundancyAction = () ->
                 ReconfigurationEventHandler.handleMergeSegments(
-                        getCorfuRuntime(), layout, MERGE_SEGMENTS_RETRY_QUERY_TIMEOUT
+                        getCorfuRuntime(), layout, MERGE_SEGMENTS_RETRY_QUERY_TIMEOUT,
+                        gcEnabled
                 );
         mergeSegmentsTask = CompletableFuture.supplyAsync(redundancyAction, failureDetectorWorker);
 

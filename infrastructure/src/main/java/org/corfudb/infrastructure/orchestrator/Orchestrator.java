@@ -4,9 +4,12 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.Maps;
 import io.netty.channel.ChannelHandlerContext;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.IServerRouter;
 import org.corfudb.infrastructure.ServerContext;
+import org.corfudb.infrastructure.log.StreamLog;
+import org.corfudb.infrastructure.log.statetransfer.StateTransferManager;
 import org.corfudb.infrastructure.orchestrator.workflows.AddNodeWorkflow;
 import org.corfudb.infrastructure.orchestrator.workflows.ForceRemoveWorkflow;
 import org.corfudb.infrastructure.orchestrator.workflows.HealNodeWorkflow;
@@ -61,18 +64,24 @@ public class Orchestrator {
      */
     private static final int ACTION_RETRY = 3;
 
-    final ServerContext serverContext;
+    private final ServerContext serverContext;
 
-    final SingletonResource<CorfuRuntime> getRuntime;
+    private final SingletonResource<CorfuRuntime> getRuntime;
 
-    final BiMap<UUID, String> activeWorkflows = Maps.synchronizedBiMap(HashBiMap.create());
+    private final BiMap<UUID, String> activeWorkflows = Maps.synchronizedBiMap(HashBiMap.create());
 
-    final ExecutorService executor;
+    private final ExecutorService executor;
+
+    private final StreamLog streamLog;
+
+
 
     public Orchestrator(@Nonnull SingletonResource<CorfuRuntime> runtime,
-                        @Nonnull ServerContext serverContext) {
+                        @Nonnull ServerContext serverContext,
+                        @NonNull StreamLog streamLog) {
         this.serverContext = serverContext;
         this.getRuntime = runtime;
+        this.streamLog = streamLog;
 
         executor = Executors.newFixedThreadPool(Runtime.getRuntime()
                 .availableProcessors(), new ThreadFactory() {
@@ -225,7 +234,6 @@ public class Orchestrator {
             params.setCacheDisabled(true);
             params.setUseFastLoader(false);
             params.setLayoutServers(servers);
-
             rt = CorfuRuntime.fromParameters(params).connect();
 
             log.info("run: Started workflow {} id {}", workflow.getName(), workflow.getId());
@@ -234,7 +242,13 @@ public class Orchestrator {
 
                 log.debug("run: Started action {} for workflow {}", action.getName(), workflow.getId());
                 long actionStart = System.currentTimeMillis();
-                action.execute(rt, actionRetry);
+                if(action instanceof RestoreAction){
+                    boolean gcCompatible = serverContext.isGCCompatibleStateTransfer();
+                    ((RestoreAction) action).execute(rt, streamLog, gcCompatible, actionRetry);
+                }
+                else{
+                    action.execute(rt, actionRetry);
+                }
                 long actionEnd = System.currentTimeMillis();
                 log.info("run: finished action {} for workflow {} in {} ms",
                         action.getName(), workflow.getId(), actionEnd - actionStart);

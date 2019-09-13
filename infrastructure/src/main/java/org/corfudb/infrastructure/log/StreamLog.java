@@ -11,7 +11,9 @@ import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.ValueAdoptedException;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -54,6 +56,21 @@ public interface StreamLog {
      * @return a map of stream to its compaction mark.
      */
     long getGlobalCompactionMark();
+
+    /**
+     * Update the global compaction mark.
+     *
+     * @param globalCompactionMark A remote global compaction mark.
+     */
+    void updateGlobalCompactionMark(long globalCompactionMark);
+
+    /**
+     * Given an address, read the garbage associated with it.
+     *
+     * @param address address to read from the garbage log.
+     * @return LogData of a GARBAGE data type. null otherwise.
+     */
+    LogData readGarbage(long address);
 
     /**
      * Prefix trim the global log.

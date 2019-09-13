@@ -8,6 +8,7 @@ import org.corfudb.runtime.exceptions.OverwriteCause;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.view.Address;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -141,6 +142,16 @@ public class InMemoryStreamLog implements StreamLog {
     @Override
     public long getGlobalCompactionMark() {
         return Address.NON_ADDRESS;
+    }
+
+    @Override
+    public void updateGlobalCompactionMark(long globalCompactionMark) {
+        // No-op
+    }
+
+    @Override
+    public LogData readGarbage(long address) {
+        return null;
     }
 
     @Override
