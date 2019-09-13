@@ -10,6 +10,7 @@ import org.corfudb.runtime.view.Layout;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
 
 
 @Slf4j
@@ -33,6 +34,11 @@ public class HealNode extends WorkflowRequest {
                 nodeForWorkflow, managementClient.getRouter().getHost(),
                 managementClient.getRouter().getPort());
         return resp.getWorkflowId();
+    }
+
+    @Override
+    protected Predicate<String> orchestratorSelector() {
+        return node -> node.equals(nodeForWorkflow);
     }
 
     @Override
