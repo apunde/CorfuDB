@@ -334,6 +334,13 @@ public class LogUnitServer extends AbstractServer {
         }
     }
 
+    @ServerHandler(type = CorfuMsgType.MULTIPLE_GARBAGE_REQUEST)
+    public void multiGarbageRead(CorfuPayloadMsg<MultipleReadRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
+        boolean cacheable = msg.getPayload().isCacheReadResult();
+        log.trace("multiGarbageRead: {}, cacheable: {}", msg.getPayload().getAddresses(), cacheable);
+
+    }
+
     /**
      * Handles requests for known entries in specified range.
      * This is used by state transfer to catch up only the remainder of the segment.

@@ -11,8 +11,10 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -93,7 +95,31 @@ class RestoreRedundancyMergeSegmentsTest {
                 .getMissingStripesForAllSegments(ourNode);
 
         assertEquals(expectedResult, missingStripesForAllSegments);
+    }
 
+
+    @Test
+    public void testGetDonorServers() {
+        String ourNode = "a";
+        LayoutStripe stripe = new LayoutStripe(Arrays.asList("c", "d"));
+        LayoutStripe emptyStripe = new LayoutStripe(new ArrayList<>());
+        LayoutStripe stripeWithNode = new LayoutStripe(Collections.singletonList(ourNode));
+        Layout layout = new Layout(
+                Arrays.asList("a", "b", "c"),
+                Arrays.asList("a", "b", "c"),
+                Collections.singletonList(new LayoutSegment(CHAIN_REPLICATION, 0, 100,
+                        ImmutableList.of(stripe))),
+                0L, UUID.randomUUID());
+
+        assertEquals(RedundancyCalculator.getDonorServers(ourNode, emptyStripe), Optional.empty());
+        assertEquals(RedundancyCalculator.getDonorServers(ourNode, stripeWithNode), Optional.empty());
+        assertEquals(RedundancyCalculator.getDonorServers(ourNode, stripe),
+                Optional.of(Arrays.asList("c", "d")));
+    }
+
+    @Test
+    public void testRedundancyIsRestored() {
 
     }
+
 }

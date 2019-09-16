@@ -3,8 +3,10 @@ package org.corfudb.infrastructure.orchestrator.actions;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -13,6 +15,7 @@ import javax.annotation.Nonnull;
 
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.orchestrator.Action;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.view.Layout;
@@ -25,6 +28,7 @@ import org.corfudb.runtime.view.Layout.LayoutStripe;
  * servers in the 2 oldest subsequent segments are equal.
  * Created by Zeeshan on 2019-02-06.
  */
+@Slf4j
 public class RestoreRedundancyMergeSegments extends Action {
 
     @Builder
@@ -69,6 +73,45 @@ public class RestoreRedundancyMergeSegments extends Action {
 
                     }));
         }
+
+        /**
+         * Check that this node is present for all the stripes in all the segments.
+         *
+         * @param server The address of a node.
+         * @return True if redundancy is completely restored and false otherwise.
+         */
+        public boolean redundancyIsRestored(String server){
+            Map<LayoutSegment, Set<LayoutStripe>> missingStripesForAllSegments
+                    = getMissingStripesForAllSegments(server);
+            return missingStripesForAllSegments
+                    .entrySet()
+                    .stream()
+                    .allMatch(entry -> entry.getValue().isEmpty());
+        }
+
+        /**
+         * Get a list of garbage and data donors.
+         *
+         * @param server The address of a node.
+         * @param stripe The stripe for which this node should exist.
+         * @return Optional list of donors for this server.
+         */
+        public static Optional<List<String>> getDonorServers(String server, LayoutStripe stripe){
+            List<String> logServers = stripe.getLogServers();
+            Optional<List<String>> emptyResult = Optional.empty();
+            if(logServers.isEmpty()){
+                log.info("No log servers found for this stripe");
+                return emptyResult;
+            }
+            else if(logServers.contains(server)){
+                log.info("The redundancy for the stripe is already restored for {}", server);
+                return emptyResult;
+
+            }
+            else{
+                return Optional.of(logServers);
+            }
+        }
     }
 
     private final String currentNode;
@@ -106,6 +149,17 @@ public class RestoreRedundancyMergeSegments extends Action {
         // Refresh layout.
         runtime.invalidateLayout();
         Layout layout = runtime.getLayoutView().getLayout();
+        RedundancyCalculator redundancyCalculator = RedundancyCalculator.builder().layout(layout).build();
+
+        while(!redundancyCalculator.redundancyIsRestored(currentNode)){
+            LayoutSegment segment = layout.getFirstSegment();
+            Map<LayoutSegment, Set<LayoutStripe>> missingStripesForAllSegments
+                    = redundancyCalculator.getMissingStripesForAllSegments(currentNode);
+            Set<LayoutStripe> layoutStripes = missingStripesForAllSegments.get(segment);
+            for(LayoutStripe stripe: layoutStripes){
+
+            }
+        }
 
         // Each segment is compared with the first segment. The data is restored in any new LogUnit nodes and then
         // merged to this segment. This is done for all the segments.
@@ -130,5 +184,7 @@ public class RestoreRedundancyMergeSegments extends Action {
             runtime.invalidateLayout();
             layout = runtime.getLayoutView().getLayout();
         }
+
+
     }
 }
