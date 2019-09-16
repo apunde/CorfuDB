@@ -336,9 +336,18 @@ public class LogUnitServer extends AbstractServer {
 
     @ServerHandler(type = CorfuMsgType.MULTIPLE_GARBAGE_REQUEST)
     public void multiGarbageRead(CorfuPayloadMsg<MultipleReadRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
-        boolean cacheable = msg.getPayload().isCacheReadResult();
-        log.trace("multiGarbageRead: {}, cacheable: {}", msg.getPayload().getAddresses(), cacheable);
-
+        log.trace("multiGarbageRead: {}", msg.getPayload().getAddresses());
+        ReadResponse readResponse = new ReadResponse();
+        for(Long address: msg.getPayload().getAddresses()){
+            LogData logData = streamLog.readGarbage(address);
+            if(logData == null){
+                readResponse.put(address, LogData.getEmpty(address));
+            }
+            else{
+                readResponse.put(address, logData);
+            }
+            r.sendResponse(ctx, msg, CorfuMsgType.READ_RESPONSE.payloadMsg(readResponse));
+        }
     }
 
     /**

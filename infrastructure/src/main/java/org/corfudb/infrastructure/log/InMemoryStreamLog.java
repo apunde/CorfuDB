@@ -144,6 +144,11 @@ public class InMemoryStreamLog implements StreamLog {
     }
 
     @Override
+    public LogData readGarbage(long address) {
+        return null;
+    }
+
+    @Override
     public void sync(boolean force){
         // No-op
     }
