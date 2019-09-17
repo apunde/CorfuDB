@@ -1,6 +1,7 @@
 package org.corfudb.infrastructure;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Iterables;
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Builder;
 import lombok.Getter;
@@ -38,21 +39,27 @@ import org.corfudb.runtime.exceptions.UnreachableClusterException;
 import org.corfudb.runtime.exceptions.ValueAdoptedException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.view.Layout;
+import org.corfudb.runtime.view.RuntimeLayout;
 import org.corfudb.runtime.view.stream.StreamAddressSpace;
+import org.corfudb.util.CFUtils;
 import org.corfudb.util.Utils;
 import org.corfudb.util.concurrent.SingletonResource;
 
 import java.lang.invoke.MethodHandles;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.LOG_ADDRESS_SPACE_QUERY;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.MULTI_GARBAGE_WRITE;
@@ -394,11 +401,17 @@ public class LogUnitServer extends AbstractServer {
 
     @ServerHandler(type = CorfuMsgType.STATE_TRANSFER_REQUEST)
     public void handleStateTransfer(CorfuPayloadMsg<StateTransferRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
-
+        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
         long startAddress = msg.getPayload().getStart();
         long endAddress = msg.getPayload().getEnd();
         log.trace("handleStateTransfer from {} to {}", startAddress, endAddress);
+        // invalidate layout
         runtimeSingletonResource.get().invalidateLayout();
+        // get unknown addresses in this range
+        List<Long> unknownAddresses = streamLog.getUnknownAddressesInRange(startAddress, endAddress);
+
+
+
 
 
     }
@@ -492,6 +505,45 @@ public class LogUnitServer extends AbstractServer {
             r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
         }
     }
+
+    /**
+     * Reads garbage from other logunits in parallel.
+     * @param addresses The addresses corresponding to the garbage entries.
+     * @return A completable future of a list of garbage responses.
+     */
+    private synchronized CompletableFuture<List<ReadResponse>> readGarbage(List<Long> addresses,
+                                                                           int bulkReadSize,
+                                                                           RuntimeLayout
+                                                                                   runtimeLayout){
+        log.trace("Reading garbage for addresses: {}", addresses);
+        Map<String, List<Long>> serverToGarbageAddresses = new HashMap<>();
+
+        Iterable<List<Long>> batches = Iterables.partition(addresses,
+                bulkReadSize);
+
+        for(List<Long> batch: batches){
+            for(long address: batch){
+                List<String> servers = runtimeLayout
+                        .getLayout()
+                        .getStripe(address)
+                        .getLogServers();
+                String logServer = servers.get(servers.size() - 1);
+                List<Long> addressesPerServer =
+                        serverToGarbageAddresses.computeIfAbsent(logServer, s -> new ArrayList<>());
+                addressesPerServer.add(address);
+            }
+        }
+
+        List<CompletableFuture<ReadResponse>> garbageResponses = serverToGarbageAddresses
+                .entrySet()
+                .stream()
+                .map(entry -> runtimeLayout
+                        .getLogUnitClient(entry.getKey())
+                        .readGarbageEntries(entry.getValue()))
+                .collect(Collectors.toList());
+        return CFUtils.sequence(garbageResponses);
+    }
+
 
 
     /**

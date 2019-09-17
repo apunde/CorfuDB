@@ -5,6 +5,7 @@ import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterrupte
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -14,6 +15,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Created by mwei on 9/15/15.
@@ -146,6 +148,20 @@ public final class CFUtils {
     }
 
     /**
+     * Takes a list of completable futures and returns a CompletableFuture of a list.
+     * @param futures A list of completable futures, perhaps a result of a mapping HOF.
+     * @param <T> A return type of the future.
+     * @return A completable future, which completes with a list of results.
+     */
+    public static<T>CompletableFuture<List<T>> sequence(List<CompletableFuture<T>> futures) {
+            return CompletableFuture
+                    .allOf(futures.toArray(new CompletableFuture<?>[futures.size()]))
+                    .thenApply(x -> futures.stream()
+                            .map(CompletableFuture::join)
+                            .collect(Collectors.toList()));
+    }
+
+    /**
      * Unwraps ExecutionException thrown from a CompletableFuture.
      *
      * @param throwable  Throwable to unwrap.
@@ -180,4 +196,6 @@ public final class CFUtils {
     public static void unwrap(Throwable throwable) {
         unwrap(throwable, RuntimeException.class);
     }
+
+
 }

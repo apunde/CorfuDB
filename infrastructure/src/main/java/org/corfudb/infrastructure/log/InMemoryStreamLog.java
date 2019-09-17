@@ -8,6 +8,7 @@ import org.corfudb.runtime.exceptions.OverwriteCause;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.view.Address;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -131,6 +132,18 @@ public class InMemoryStreamLog implements StreamLog {
             }
         }
         return result;
+    }
+
+    @Override
+    public List<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
+        Set<Long> knownAddresses = getKnownAddressesInRange(rangeStart, rangeEnd);
+        List<Long> unknownAddresses = new ArrayList<>();
+        for (long address = rangeStart; address <= rangeEnd; address++) {
+            if (!knownAddresses.contains(address)) {
+                unknownAddresses.add(address);
+            }
+        }
+        return unknownAddresses;
     }
 
     @Override

@@ -440,6 +440,26 @@ public class StreamLogFiles implements StreamLog {
         return result;
     }
 
+    /**
+     * This method requests for the unknown addresses in this Log Unit in the specified consecutive
+     * range of addresses.
+     *
+     * @param rangeStart Start address of range.
+     * @param rangeEnd End address of range.
+     * @return List of unknown addresses.
+     */
+    @Override
+    public List<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
+        Set<Long> knownAddresses = getKnownAddressesInRange(rangeStart, rangeEnd);
+        List<Long> unknownAddresses = new ArrayList<>();
+        for (long address = rangeStart; address <= rangeEnd; address++) {
+            if (!knownAddresses.contains(address)) {
+                unknownAddresses.add(address);
+            }
+        }
+        return unknownAddresses;
+    }
+
     @Override
     public void append(List<LogData> range) {
         if (range.isEmpty()) {

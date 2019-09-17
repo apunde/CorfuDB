@@ -11,6 +11,7 @@ import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.ValueAdoptedException;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -112,6 +113,15 @@ public interface StreamLog {
      */
     Set<Long> getKnownAddressesInRange(long rangeStart, long rangeEnd);
 
+    /**
+     *  Returns the unknown addresses in this Log Unit in the specified consecutive
+     *  range of addresses.
+     *
+     * @param rangeStart Start address of range.
+     * @param rangeEnd End address of range.
+     * @return List of unknown addresses.
+     */
+    List<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd);
     /**
      * Sync the stream log file to secondary storage.
      *
