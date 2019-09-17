@@ -53,14 +53,6 @@ public class StateTransfer {
             .build();
 
 
-
-    public static void transferGarbage(Layout layout, @NonNull String currentEndpoint,
-                                       CorfuRuntime runtime,
-                                       LayoutSegment segment,
-                                       Set<LayoutStripe> missingStripes){
-
-
-    }
     /**
      * Fetch and propagate the trimMark to the new/healing nodes. Else, a FastLoader reading from
      * them will have to mark all the already trimmed entries as holes.

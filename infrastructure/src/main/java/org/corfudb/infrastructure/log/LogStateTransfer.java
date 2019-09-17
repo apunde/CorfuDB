@@ -27,6 +27,35 @@ public class LogStateTransfer {
     }
 
     /**
+     *
+     * @param addresses The addresses of garbage or data entries.
+     * @param bulkSize  The size of a batch, small enough to safely transfer within one rpc call.
+     * @param runtimeLayout The current runtime layout to extract a server information.
+     * @return  A map from servers to list of address batches.
+     */
+    private static Map<String, List<List<Long>>> mapServersToBatches(List<Long> addresses,
+                                                               int bulkSize,
+                                                               RuntimeLayout runtimeLayout){
+        Map<String, List<List<Long>>> serverToGarbageAddresses = new HashMap<>();
+        List<List<Long>> batches = Lists.partition(addresses,
+                bulkSize);
+
+        for (List<Long> batch : batches) {
+            for (long address : batch) {
+                List<String> servers = runtimeLayout
+                        .getLayout()
+                        .getStripe(address)
+                        .getLogServers();
+                String logServer = servers.get(servers.size() - 1);
+                List<List<Long>> addressesPerServer =
+                        serverToGarbageAddresses.computeIfAbsent(logServer, s -> new ArrayList(new ArrayList<>()));
+                addressesPerServer.add(batch);
+            }
+        }
+        return serverToGarbageAddresses;
+    }
+
+    /**
      * Reads garbage from other logunits in parallel.
      *
      * @param addresses     The addresses corresponding to the garbage entries.
@@ -39,55 +68,20 @@ public class LogStateTransfer {
                                                                                   RuntimeLayout
                                                                                           runtimeLayout) {
         log.trace("Reading garbage for addresses: {}", addresses);
-        Map<String, List<Long>> serverToGarbageAddresses = new HashMap<>();
-
-        List<List<Long>> batches = Lists.partition(addresses,
-                bulkReadSize);
-
-        for (List<Long> batch : batches) {
-            for (long address : batch) {
-                List<String> servers = runtimeLayout
-                        .getLayout()
-                        .getStripe(address)
-                        .getLogServers();
-                String logServer = servers.get(servers.size() - 1);
-                List<Long> addressesPerServer =
-                        serverToGarbageAddresses.computeIfAbsent(logServer, s -> new ArrayList<>());
-                addressesPerServer.add(address);
-            }
-        }
+        Map<String, List<List<Long>>> serverToGarbageAddresses =
+                mapServersToBatches(addresses, bulkReadSize, runtimeLayout);
 
         List<CompletableFuture<ReadResponse>> garbageResponses = serverToGarbageAddresses
                 .entrySet()
                 .stream()
-                .map(entry -> runtimeLayout
-                        .getLogUnitClient(entry.getKey())
-                        .readGarbageEntries(entry.getValue()))
+                .flatMap(entry -> entry.getValue()
+                        .stream()
+                        .map(batch ->
+                                runtimeLayout
+                                        .getLogUnitClient(entry.getKey())
+                                        .readGarbageEntries(batch)))
                 .collect(Collectors.toList());
         return CFUtils.sequence(garbageResponses);
-    }
-
-    /**
-     * Writes garbage entries to the current logunit.
-     *
-     * @param garbageEntries  The list of garbage entries.
-     * @param bulkWriteSize   The number of records to write within one RPC call.
-     * @param runtimeLayout   A runtime layout to use for connections.
-     * @param currentEndpoint The current endpoint of the node.
-     * @return A completable future of a list of write successes.
-     */
-    private static synchronized CompletableFuture<List<Boolean>> writeGarbage(List<LogData> garbageEntries,
-                                                                              int bulkWriteSize,
-                                                                              RuntimeLayout runtimeLayout,
-                                                                              String currentEndpoint) {
-        log.trace("Writing garbage entries: {}", garbageEntries);
-        List<List<LogData>> batches = Lists.partition(garbageEntries, bulkWriteSize);
-        List<CompletableFuture<Boolean>> writeResponses = batches.stream().map(batch -> runtimeLayout
-                .getLogUnitClient(currentEndpoint)
-                .writeGarbageEntries(batch))
-                .collect(Collectors.toList());
-
-        return CFUtils.sequence(writeResponses);
     }
 
     /**
@@ -105,22 +99,8 @@ public class LogStateTransfer {
                                                  AddressSpaceView addressSpaceView,
                                                  ReadOptions readOptions) {
         log.trace("Reading data entries: {}", addresses);
-        Map<String, List<Long>> serverToAddresses = new HashMap<>();
-        List<List<Long>> batches = Lists.partition(addresses,
-                bulkReadSize);
-
-        for (List<Long> batch : batches) {
-            for (long address : batch) {
-                List<String> servers = runtimeLayout
-                        .getLayout()
-                        .getStripe(address)
-                        .getLogServers();
-                String logServer = servers.get(servers.size() - 1);
-                List<Long> addressesPerServer =
-                        serverToAddresses.computeIfAbsent(logServer, s -> new ArrayList<>());
-                addressesPerServer.add(address);
-            }
-        }
+        Map<String, List<List<Long>>> serverToAddresses =
+                mapServersToBatches(addresses, bulkReadSize, runtimeLayout);
 
         return serverToAddresses
                 .values()
@@ -136,22 +116,11 @@ public class LogStateTransfer {
     /**
      * Write records to the current logunit.
      *
-     * @param addresses The list of data entries.
-     * @param bulkWriteSize The number of records to write within one RPC call.
-     * @param runtimeLayout A runtime layout to use for connections.
-     * @param currentEndpoint The current endpoint of the node.
-     * @return A completable future of a list of write successes.
+     * @param dataEntries The list of entries (data or garbage).
+     * @param streamLog The instance of the underlying streamlog.
      */
-    private static synchronized CompletableFuture<List<Boolean>> writeRecords(List<LogData> addresses,
-                                                                              int bulkWriteSize,
-                                                                              RuntimeLayout runtimeLayout,
-                                                                              String currentEndpoint){
-        log.trace("Wring data entries: {}", addresses);
-        List<List<LogData>> batches = Lists.partition(addresses, bulkWriteSize);
-        List<CompletableFuture<Boolean>> writeResponses = batches.stream().map(batch -> runtimeLayout
-                .getLogUnitClient(currentEndpoint)
-                .writeRange(batch))
-                .collect(Collectors.toList());
-        return CFUtils.sequence(writeResponses);
+    private static synchronized void writeRecords(List<LogData> dataEntries, StreamLog streamLog){
+        log.trace("Writing data entries: {}", dataEntries);
+        streamLog.append(dataEntries);
     }
 }
