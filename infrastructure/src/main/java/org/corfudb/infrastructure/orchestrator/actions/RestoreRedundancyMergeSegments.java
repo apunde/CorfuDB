@@ -157,7 +157,7 @@ public class RestoreRedundancyMergeSegments extends Action {
                     = redundancyCalculator.getMissingStripesForAllSegments(currentNode);
             Set<LayoutStripe> layoutStripes = missingStripesForAllSegments.get(segment);
             for(LayoutStripe stripe: layoutStripes){
-                StateTransfer.transferGarbage(layout, currentNode, runtime, segment, stripe.getLogServers());
+                StateTransfer.transferGarbage(layout, currentNode, runtime, segment, layoutStripes);
             }
         }
 

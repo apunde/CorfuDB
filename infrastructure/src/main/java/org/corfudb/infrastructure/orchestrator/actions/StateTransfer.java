@@ -18,6 +18,7 @@ import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.Layout.LayoutSegment;
+import org.corfudb.runtime.view.Layout.LayoutStripe;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.retry.ExponentialBackoffRetry;
@@ -56,7 +57,8 @@ public class StateTransfer {
     public static void transferGarbage(Layout layout, @NonNull String currentEndpoint,
                                        CorfuRuntime runtime,
                                        LayoutSegment segment,
-                                       List<String> stripeServers){
+                                       Set<LayoutStripe> missingStripes){
+
 
     }
     /**

@@ -21,20 +21,26 @@ import org.corfudb.protocols.wireprotocol.PriorityLevel;
 import org.corfudb.protocols.wireprotocol.RangeWriteMsg;
 import org.corfudb.protocols.wireprotocol.ReadRequest;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
+import org.corfudb.protocols.wireprotocol.StateTransferRequest;
 import org.corfudb.protocols.wireprotocol.StreamsAddressResponse;
 import org.corfudb.protocols.wireprotocol.TailsRequest;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
+import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.CorfuRuntime.CorfuRuntimeParameters;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.LogUnitException;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.TrimmedException;
+import org.corfudb.runtime.exceptions.UnreachableClusterException;
 import org.corfudb.runtime.exceptions.ValueAdoptedException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
+import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.stream.StreamAddressSpace;
 import org.corfudb.util.Utils;
+import org.corfudb.util.concurrent.SingletonResource;
 
 import java.lang.invoke.MethodHandles;
 import java.util.Collections;
@@ -101,6 +107,11 @@ public class LogUnitServer extends AbstractServer {
     private final StreamLog streamLog;
     private final BatchProcessor batchWriter;
 
+    private static final int SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT = 60;
+
+    private SingletonResource<CorfuRuntime> runtimeSingletonResource
+            = SingletonResource.withInitial(this::getNewCorfuRuntime);
+
     private ExecutorService executor;
 
     @Override
@@ -144,6 +155,37 @@ public class LogUnitServer extends AbstractServer {
         if (config.enableCompaction) {
             streamLog.startCompactor();
         }
+    }
+
+
+    private final Runnable runtimeSystemDownHandler = () -> {
+        log.warn("LogUnitServer: Runtime stalled. Invoking systemDownHandler after {} "
+                + "unsuccessful tries.", SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT);
+        throw new UnreachableClusterException("Runtime stalled. Invoking systemDownHandler after "
+                + SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT + " unsuccessful tries.");
+    };
+
+
+    private CorfuRuntime getNewCorfuRuntime(){
+        CorfuRuntimeParameters params
+                = serverContext.getManagementRuntimeParameters();
+        params.setCacheDisabled(true);
+        params.setSystemDownHandlerTriggerLimit(SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT);
+        params.setSystemDownHandler(runtimeSystemDownHandler);
+
+        CorfuRuntime runtime = CorfuRuntime.fromParameters(params);
+
+        // Same layout as a management layout because the runtime-dependent workflows
+        // are initiated from the ManagementServer.
+        final Layout managementLayout = serverContext.copyManagementLayout();
+
+        if (managementLayout != null) {
+            managementLayout.getLayoutServers().forEach(runtime::addLayoutServer);
+        }
+
+        runtime.connect();
+        log.info("LogUnitServer: runtime connected");
+        return runtime;
     }
 
     /**
@@ -348,6 +390,17 @@ public class LogUnitServer extends AbstractServer {
             }
             r.sendResponse(ctx, msg, CorfuMsgType.READ_RESPONSE.payloadMsg(readResponse));
         }
+    }
+
+    @ServerHandler(type = CorfuMsgType.STATE_TRANSFER_REQUEST)
+    public void handleStateTransfer(CorfuPayloadMsg<StateTransferRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
+
+        long startAddress = msg.getPayload().getStart();
+        long endAddress = msg.getPayload().getEnd();
+        log.trace("handleStateTransfer from {} to {}", startAddress, endAddress);
+        runtimeSingletonResource.get().invalidateLayout();
+
+
     }
 
     /**
