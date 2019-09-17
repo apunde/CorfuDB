@@ -2,6 +2,7 @@ package org.corfudb.infrastructure;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Builder;
 import lombok.Getter;
@@ -38,7 +39,9 @@ import org.corfudb.runtime.exceptions.TrimmedException;
 import org.corfudb.runtime.exceptions.UnreachableClusterException;
 import org.corfudb.runtime.exceptions.ValueAdoptedException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
+import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.Layout;
+import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
 import org.corfudb.runtime.view.stream.StreamAddressSpace;
 import org.corfudb.util.CFUtils;
@@ -505,46 +508,6 @@ public class LogUnitServer extends AbstractServer {
             r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
         }
     }
-
-    /**
-     * Reads garbage from other logunits in parallel.
-     * @param addresses The addresses corresponding to the garbage entries.
-     * @return A completable future of a list of garbage responses.
-     */
-    private synchronized CompletableFuture<List<ReadResponse>> readGarbage(List<Long> addresses,
-                                                                           int bulkReadSize,
-                                                                           RuntimeLayout
-                                                                                   runtimeLayout){
-        log.trace("Reading garbage for addresses: {}", addresses);
-        Map<String, List<Long>> serverToGarbageAddresses = new HashMap<>();
-
-        Iterable<List<Long>> batches = Iterables.partition(addresses,
-                bulkReadSize);
-
-        for(List<Long> batch: batches){
-            for(long address: batch){
-                List<String> servers = runtimeLayout
-                        .getLayout()
-                        .getStripe(address)
-                        .getLogServers();
-                String logServer = servers.get(servers.size() - 1);
-                List<Long> addressesPerServer =
-                        serverToGarbageAddresses.computeIfAbsent(logServer, s -> new ArrayList<>());
-                addressesPerServer.add(address);
-            }
-        }
-
-        List<CompletableFuture<ReadResponse>> garbageResponses = serverToGarbageAddresses
-                .entrySet()
-                .stream()
-                .map(entry -> runtimeLayout
-                        .getLogUnitClient(entry.getKey())
-                        .readGarbageEntries(entry.getValue()))
-                .collect(Collectors.toList());
-        return CFUtils.sequence(garbageResponses);
-    }
-
-
 
     /**
      * Shutdown the server.

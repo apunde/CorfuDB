@@ -149,9 +149,9 @@ public final class CFUtils {
 
     /**
      * Takes a list of completable futures and returns a CompletableFuture of a list.
-     * @param futures A list of completable futures, perhaps a result of a mapping HOF.
+     * @param futures A list of completable futures, perhaps a result of a map function.
      * @param <T> A return type of the future.
-     * @return A completable future, which completes with a list of results.
+     * @return A completable future, which completes with a list of the results.
      */
     public static<T>CompletableFuture<List<T>> sequence(List<CompletableFuture<T>> futures) {
             return CompletableFuture
