@@ -18,22 +18,24 @@ message TableName {
     string table_name = 2;
 }
 
-// Descriptor to provide self describing schemas for the records.
 message TableDescriptors {
+    // Descriptor protobufs.
     google.protobuf.DescriptorProto keyDescriptor = 1;
     google.protobuf.DescriptorProto valueDescriptor = 2;
+    google.protobuf.DescriptorProto metadataDescriptor = 3;
+
+    // Canonical class names of the key, value and metadata classes.
+    string keyClass = 4;
+    string valueClass = 5;
+    string metadataClass = 6;
 }
 
-// Metadata.
 message TableMetadata {
     TableName table_name = 1;
-    // True if the CorfuStore is disk based and False if it can be contained in memory.
     bool disk_based = 2;
-    // True if these streams are to be cached, False otherwise.
     bool cache = 3;
 }
 
-// Record to be persisted containing the value and the metadata.
 message Record {
     google.protobuf.Any payload = 1;
     google.protobuf.Any metadata = 2;
