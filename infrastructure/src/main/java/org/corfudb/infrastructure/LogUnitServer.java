@@ -8,6 +8,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.log.InMemoryStreamLog;
+import org.corfudb.infrastructure.log.LogStateTransfer;
+import org.corfudb.infrastructure.log.LogStateTransferor;
+import org.corfudb.infrastructure.log.LogStateTransferor.StateTransferState;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.StreamLogFiles;
 import org.corfudb.infrastructure.log.StreamLogParams;
@@ -116,11 +119,7 @@ public class LogUnitServer extends AbstractServer {
     private final LogUnitServerCache dataCache;
     private final StreamLog streamLog;
     private final BatchProcessor batchWriter;
-
-    private static final int SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT = 60;
-
-    private SingletonResource<CorfuRuntime> runtimeSingletonResource
-            = SingletonResource.withInitial(this::getNewCorfuRuntime);
+    private final LogStateTransferor logStateTransferor;
 
     private ExecutorService executor;
 
@@ -161,41 +160,14 @@ public class LogUnitServer extends AbstractServer {
 
         dataCache = new LogUnitServerCache(config, streamLog);
         batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
+        logStateTransferor = LogStateTransferor.builder()
+                .streamLog(streamLog)
+                .serverContext(serverContext)
+                .state(StateTransferState.TRANSFERRED).build();
 
         if (config.enableCompaction) {
             streamLog.startCompactor();
         }
-    }
-
-
-    private final Runnable runtimeSystemDownHandler = () -> {
-        log.warn("LogUnitServer: Runtime stalled. Invoking systemDownHandler after {} "
-                + "unsuccessful tries.", SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT);
-        throw new UnreachableClusterException("Runtime stalled. Invoking systemDownHandler after "
-                + SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT + " unsuccessful tries.");
-    };
-
-
-    private CorfuRuntime getNewCorfuRuntime(){
-        CorfuRuntimeParameters params
-                = serverContext.getManagementRuntimeParameters();
-        params.setCacheDisabled(true);
-        params.setSystemDownHandlerTriggerLimit(SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT);
-        params.setSystemDownHandler(runtimeSystemDownHandler);
-
-        CorfuRuntime runtime = CorfuRuntime.fromParameters(params);
-
-        // Same layout as a management layout because the runtime-dependent workflows
-        // are initiated from the ManagementServer.
-        final Layout managementLayout = serverContext.copyManagementLayout();
-
-        if (managementLayout != null) {
-            managementLayout.getLayoutServers().forEach(runtime::addLayoutServer);
-        }
-
-        runtime.connect();
-        log.info("LogUnitServer: runtime connected");
-        return runtime;
     }
 
     /**

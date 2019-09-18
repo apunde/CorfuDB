@@ -7,13 +7,18 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
+import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.exceptions.UnreachableClusterException;
 import org.corfudb.runtime.view.AddressSpaceView;
+import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
 import org.corfudb.util.CFUtils;
+import org.corfudb.util.concurrent.SingletonResource;
 
 import java.util.AbstractMap.SimpleEntry;
 import java.util.List;
@@ -24,12 +29,14 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Builder
-public class LogStateTransfer {
+public class LogStateTransferor {
 
     public enum StateTransferState{
         TRANSFERRING,
         TRANSFERRED
     }
+
+    private static final int SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT = 60;
 
     @AllArgsConstructor
     @Getter
@@ -49,6 +56,45 @@ public class LogStateTransfer {
     @Getter
     @Setter
     private StreamLog streamLog;
+
+    @Getter
+    @Setter
+    private ServerContext serverContext;
+
+    @Getter
+    @Setter
+    private SingletonResource<CorfuRuntime> runtimeSingletonResource
+            = SingletonResource.withInitial(this::getNewCorfuRuntime);
+
+    private CorfuRuntime getNewCorfuRuntime(){
+        CorfuRuntime.CorfuRuntimeParameters params
+                = serverContext.getManagementRuntimeParameters();
+        params.setCacheDisabled(true);
+        params.setSystemDownHandlerTriggerLimit(SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT);
+        params.setSystemDownHandler(runtimeSystemDownHandler);
+
+        CorfuRuntime runtime = CorfuRuntime.fromParameters(params);
+
+        // Same layout as a management layout because the runtime-dependent workflows
+        // are initiated from the ManagementServer.
+        final Layout managementLayout = serverContext.copyManagementLayout();
+
+        if (managementLayout != null) {
+            managementLayout.getLayoutServers().forEach(runtime::addLayoutServer);
+        }
+
+        runtime.connect();
+        log.info("LogStateTransferor: runtime connected");
+        return runtime;
+    }
+
+    private final Runnable runtimeSystemDownHandler = () -> {
+        log.warn("LogStateTransferor: Runtime stalled. Invoking systemDownHandler after {} "
+                + "unsuccessful tries.", SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT);
+        throw new UnreachableClusterException("Runtime stalled. Invoking systemDownHandler after "
+                + SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT + " unsuccessful tries.");
+    };
+
 
     /** Creates a map from servers to the address batches they are responsible for.
      *
