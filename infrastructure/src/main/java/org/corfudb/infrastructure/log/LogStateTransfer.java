@@ -1,8 +1,11 @@
 package org.corfudb.infrastructure.log;
 
-import com.google.common.collect.ImmutableMap;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
-import jdk.internal.util.xml.impl.Pair;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
@@ -12,10 +15,7 @@ import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
 import org.corfudb.util.CFUtils;
 
-import java.util.AbstractMap;
 import java.util.AbstractMap.SimpleEntry;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -23,12 +23,32 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Slf4j
+@Builder
 public class LogStateTransfer {
 
-    // prevent from creating instances
-    private LogStateTransfer() {
-
+    public enum StateTransferState{
+        TRANSFERRING,
+        TRANSFERRED
     }
+
+    @AllArgsConstructor
+    @Getter
+    private static class CurrentTransferSegment{
+        private final long startAddress;
+        private final long endAddress;
+    }
+
+    @Getter
+    @Setter
+    private StateTransferState state;
+
+    @Getter
+    @Setter
+    private CurrentTransferSegment currentTransferSegment;
+
+    @Getter
+    @Setter
+    private StreamLog streamLog;
 
     /** Creates a map from servers to the address batches they are responsible for.
      *
@@ -37,6 +57,7 @@ public class LogStateTransfer {
      * @param runtimeLayout The current runtime layout to extract a server information.
      * @return A map from servers to list of address batches.
      */
+    @VisibleForTesting
     private static Map<String, List<List<Long>>> mapServersToBatches(List<Long> addresses,
                                                                      int bulkSize,
                                                                      RuntimeLayout runtimeLayout) {
@@ -67,7 +88,7 @@ public class LogStateTransfer {
      * @param runtimeLayout A runtime layout to use for connections.
      * @return A completable future of a list of garbage responses.
      */
-    private static synchronized CompletableFuture<List<ReadResponse>> readGarbage(List<Long> addresses,
+    public static synchronized CompletableFuture<List<ReadResponse>> readGarbage(List<Long> addresses,
                                                                                   int bulkReadSize,
                                                                                   RuntimeLayout
                                                                                           runtimeLayout) {
@@ -98,7 +119,8 @@ public class LogStateTransfer {
      * @param readOptions      The read options to use for the address space view.
      * @return A map from address to the LogData entry.
      */
-    private static synchronized Map<Long, ILogData> readRecords(List<Long> addresses,
+    @VisibleForTesting
+    public static synchronized Map<Long, ILogData> readRecords(List<Long> addresses,
                                                                 int bulkReadSize,
                                                                 RuntimeLayout runtimeLayout,
                                                                 AddressSpaceView addressSpaceView,
@@ -125,7 +147,7 @@ public class LogStateTransfer {
      * @param dataEntries The list of entries (data or garbage).
      * @param streamLog   The instance of the underlying stream log.
      */
-    private static synchronized void writeRecords(List<LogData> dataEntries, StreamLog streamLog) {
+    public static synchronized void writeRecords(List<LogData> dataEntries, StreamLog streamLog) {
         log.trace("Writing data entries: {}", dataEntries);
         streamLog.append(dataEntries);
     }

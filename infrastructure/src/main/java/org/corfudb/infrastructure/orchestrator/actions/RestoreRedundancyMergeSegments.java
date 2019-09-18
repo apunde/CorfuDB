@@ -88,30 +88,6 @@ public class RestoreRedundancyMergeSegments extends Action {
                     .stream()
                     .allMatch(entry -> entry.getValue().isEmpty());
         }
-
-        /**
-         * Get a list of garbage and data donors.
-         *
-         * @param server The address of a node.
-         * @param stripe The stripe for which this node should exist.
-         * @return Optional list of donors for this server.
-         */
-        public static Optional<List<String>> getDonorServers(String server, LayoutStripe stripe){
-            List<String> logServers = stripe.getLogServers();
-            Optional<List<String>> emptyResult = Optional.empty();
-            if(logServers.isEmpty()){
-                log.info("No log servers found for this stripe");
-                return emptyResult;
-            }
-            else if(logServers.contains(server)){
-                log.info("The redundancy for the stripe is already restored for {}", server);
-                return emptyResult;
-
-            }
-            else{
-                return Optional.of(logServers);
-            }
-        }
     }
 
     private final String currentNode;
