@@ -2,12 +2,19 @@ package org.corfudb.util;
 
 import com.google.common.collect.ImmutableMap;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.ClassUtils;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -92,38 +99,84 @@ public class ReflectionUtils {
                 .toArray(Class[]::new);
     }
 
-    public static <T> T newInstanceFromUnknownArgumentTypes(Class<T> cls, Object[] args) {
-        try {
-            return cls.getDeclaredConstructor(getArgumentTypesFromArgumentList(args))
-                    .newInstance(args);
-        } catch (InstantiationException | InvocationTargetException | IllegalAccessException ie) {
-            throw new RuntimeException(ie);
-        } catch (NoSuchMethodException nsme) {
-            // Now we need to find a matching primitive type.
-            // We can maybe cheat by running through all the constructors until we get what we want
-            // due to autoboxing
-            Constructor[] ctors = Arrays.stream(cls.getDeclaredConstructors())
-                    .filter(c -> c.getParameterTypes().length == args.length)
-                    .toArray(Constructor[]::new);
-            for (Constructor<?> ctor : ctors) {
-                try {
-                    return (T) ctor.newInstance(args);
-                } catch (Exception e) {
-                    // silently drop exceptions since we are brute forcing here...
-                }
+    /**
+     * Given the constructor arguments and the desired class type, find
+     * the closest matching constructor. For example, if a wrapper
+     * class contains two constructors, Constructor(A) and Constructor(B),
+     * and the constructor argument is of type B, where B inherits from A,
+     * instantiate the object via Constructor(B) since it is closes with
+     * respect to type hierarchy.
+     *
+     * @param constructors   Object constructors.
+     * @param args           Constructor arguments.
+     * @param <T>            Type
+     * @return instantiated  wrapper class.
+     * @throws IllegalAccessException
+     * @throws InvocationTargetException
+     * @throws InstantiationException
+     */
+    public static <T> Object findMatchingConstructor(
+            Constructor[] constructors, Object[] args)
+            throws IllegalAccessException, InvocationTargetException, InstantiationException {
+        // Figure out the argument types.
+        final List<Class> argTypes = Arrays
+                .stream(args).map(Object::getClass)
+                .collect(Collectors.toList());
+        // Filter out the constructors that do not have the same arity.
+        final List<Constructor> candidates = Arrays.stream(constructors)
+                .filter(constructor -> constructor.getParameterTypes().length == args.length)
+                .collect(Collectors.toList());
+
+        Map<Integer, Constructor> matchingConstructors = new HashMap<>();
+        for (Constructor constructor: candidates) {
+            final List<Class> constructorTypes = Arrays.asList(constructor.getParameterTypes());
+            List<Integer> resolutionList = new LinkedList<>();
+            for (int idx = 0; idx < constructorTypes.size(); idx++) {
+                int hierarchyDepth = 0; // 0 means unable to match the argument to the type.
+                final Class<?> constructorType = constructorTypes.get(idx);
+                Class<?> currentType = argTypes.get(idx);
+                // If we are able to match the argument type with the constructor parameter
+                // increment the hierarchy depth, signaling the distance between the
+                // argument type and the parameter type in terms of type hierarchy.
+                resolutionList.add(maxDepth(constructorType, currentType, 0));
             }
 
-            String argTypes = Arrays.stream(args)
-                    .map(Object::getClass)
-                    .map(Object::toString)
-                    .collect(Collectors.joining(", "));
+            // If any of the argument types has type distance of zero, this means
+            // that we are unable to match the current constructor with the given arguments.
+            if (resolutionList.stream().anyMatch(depth -> depth == 0)) {
+                continue;
+            }
 
-            String availableCtors = Arrays.stream(ctors)
-                    .map(Constructor::toString)
-                    .collect(Collectors.joining(", "));
+            // Put all matching constructors in a map in form of:
+            // (L1 Norm (Distance) -> Constructor)
+            matchingConstructors.put(
+                    resolutionList.stream().reduce(0, Integer::sum),
+                    constructor);
+        }
 
-            throw new RuntimeException("Couldn't find a matching ctor for "
-                    + argTypes + "; available ctors are " + availableCtors);
+        // Instantiate the wrapper object with a constructor that has the lowest L1 norm.
+        return matchingConstructors.entrySet().stream()
+                .max(Map.Entry.comparingByKey()).orElseThrow(
+                        () -> new IllegalStateException("No matching constructors found."))
+                .getValue().newInstance(args);
+    }
+
+    private static int maxDepth(Class constructorType, Class argType, int currentDepth) {
+        if (!ClassUtils.isAssignable(argType, constructorType, true)) {
+            return currentDepth;
+        } else {
+            final int newDepth = currentDepth + 1;
+            final List<Integer> results = new ArrayList<>();
+            final Class[] interfaces = constructorType.getInterfaces();
+            final Class superClass = constructorType.getSuperclass();
+
+            Arrays.stream(interfaces)
+                    .forEach(clazz -> results.add(maxDepth(interfaces[0], argType, newDepth)));
+            Optional.ofNullable(superClass)
+                    .map(clazz -> results.add(maxDepth(clazz, argType, newDepth)));
+            return results.stream()
+                    .max(Comparator.comparing(Integer::valueOf))
+                    .orElse(newDepth);
         }
     }
 
