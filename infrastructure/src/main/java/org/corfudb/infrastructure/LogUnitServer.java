@@ -358,6 +358,12 @@ public class LogUnitServer extends AbstractServer {
         }
     }
 
+    /**
+     * Handle state transfer request with a state transfer manager.
+     * @param msg State transfer request message.
+     * @param ctx ChannelHandlerContext.
+     * @param r Server router.
+     */
     @ServerHandler(type = CorfuMsgType.STATE_TRANSFER_REQUEST)
     public void handleStateTransfer(CorfuPayloadMsg<StateTransferRequestMsg> msg, ChannelHandlerContext ctx, IServerRouter r) {
         log.info("handleStateTransfer: {}", msg);
