@@ -3,7 +3,10 @@ package org.corfudb.protocols.wireprotocol.statetransfer;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.util.Arrays;
+import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * The type of requests that can be made during the state transfer process.
@@ -20,5 +23,8 @@ public enum StateTransferRequestType {
     private final Function<byte [], Request> mapping;
 
 
+    static final Map<Integer, StateTransferRequestType> typeMap =
+            Arrays.stream(StateTransferRequestType.values())
+                    .collect(Collectors.toMap(StateTransferRequestType::getRequestType, Function.identity()));
 
 }
