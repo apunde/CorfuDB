@@ -1,8 +1,9 @@
-package org.corfudb.protocols.wireprotocol;
+package org.corfudb.protocols.wireprotocol.statetransfer;
 
 import io.netty.buffer.ByteBuf;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import org.corfudb.protocols.wireprotocol.ICorfuPayload;
 
 /**
  * Request to initiate a state transfer from the start address up to the end address.

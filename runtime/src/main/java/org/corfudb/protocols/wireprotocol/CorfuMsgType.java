@@ -61,10 +61,10 @@ public enum CorfuMsgType {
     MULTIPLE_READ_REQUEST(33, new TypeToken<CorfuPayloadMsg<MultipleReadRequest>>() {}),
     PREFIX_TRIM(34, new TypeToken<CorfuPayloadMsg<TrimRequest>>() {}),
     STATE_TRANSFER_REQUEST(35, new TypeToken<CorfuPayloadMsg<RangeWriteMsg>>() {}),
+    STATE_TRANSFER_RESPONSE(36, new TypeToken<CorfuPayloadMsg<RangeWriteMsg>>() {}),
     MULTIPLE_GARBAGE_REQUEST(37, new TypeToken<CorfuPayloadMsg<ReadRequest>>() {}),
     MULTIPLE_GARBAGE_WRITE(38, new TypeToken<CorfuPayloadMsg<RangeWriteMsg>>() {}),
-    STATE_TRANSFER_STATUS_REQUEST(39, new TypeToken<CorfuPayloadMsg<RangeWriteMsg>>() {}),
-    STATE_TRANSFER_STATUS_RESPONSE(40, new TypeToken<CorfuPayloadMsg<RangeWriteMsg>>() {}),
+
     TAIL_REQUEST(41, new TypeToken<CorfuPayloadMsg<TailsRequest>>(){}),
     TAIL_RESPONSE(42, new TypeToken<CorfuPayloadMsg<TailsResponse>>(){}),
     FLUSH_CACHE(44, TypeToken.of(CorfuMsg.class), true),

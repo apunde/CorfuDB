@@ -21,9 +21,11 @@ import org.corfudb.util.CFUtils;
 import org.corfudb.util.concurrent.SingletonResource;
 
 import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -43,6 +45,7 @@ public class LogStateTransferor {
     private static class CurrentTransferSegment{
         private final long startAddress;
         private final long endAddress;
+        private long transferredUpTo;
     }
 
     @Getter
@@ -86,6 +89,21 @@ public class LogStateTransferor {
         runtime.connect();
         log.info("LogStateTransferor: runtime connected");
         return runtime;
+    }
+
+    // api entry
+    public <T>
+
+    private List<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
+
+        Set<Long> knownAddresses = streamLog.getKnownAddressesInRange(rangeStart, rangeEnd);
+        List<Long> unknownAddresses = new ArrayList<>();
+        for (long address = rangeStart; address <= rangeEnd; address++) {
+            if (!knownAddresses.contains(address)) {
+                unknownAddresses.add(address);
+            }
+        }
+        return unknownAddresses;
     }
 
     private final Runnable runtimeSystemDownHandler = () -> {

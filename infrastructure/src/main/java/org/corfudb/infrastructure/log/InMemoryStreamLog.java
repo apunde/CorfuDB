@@ -135,18 +135,6 @@ public class InMemoryStreamLog implements StreamLog {
     }
 
     @Override
-    public List<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
-        Set<Long> knownAddresses = getKnownAddressesInRange(rangeStart, rangeEnd);
-        List<Long> unknownAddresses = new ArrayList<>();
-        for (long address = rangeStart; address <= rangeEnd; address++) {
-            if (!knownAddresses.contains(address)) {
-                unknownAddresses.add(address);
-            }
-        }
-        return unknownAddresses;
-    }
-
-    @Override
     public LogData read(long address) {
         return logCache.get(address);
     }

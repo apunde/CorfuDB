@@ -114,15 +114,6 @@ public interface StreamLog {
     Set<Long> getKnownAddressesInRange(long rangeStart, long rangeEnd);
 
     /**
-     *  Returns the unknown addresses in this Log Unit in the specified consecutive
-     *  range of addresses.
-     *
-     * @param rangeStart Start address of range.
-     * @param rangeEnd End address of range.
-     * @return List of unknown addresses.
-     */
-    List<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd);
-    /**
      * Sync the stream log file to secondary storage.
      *
      * @param force force data to secondary storage if true
