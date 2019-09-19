@@ -30,6 +30,9 @@ import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
+import org.corfudb.protocols.wireprotocol.statetransfer.InitTransferRequest;
+import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
+import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferStartedResponse;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.util.CorfuComponent;
 import org.corfudb.util.serializer.Serializers;
@@ -290,5 +293,18 @@ public class LogUnitClient extends AbstractClient {
      */
     public CompletableFuture<Boolean> resetLogUnit(long epoch) {
         return sendMessageWithFuture(CorfuMsgType.RESET_LOGUNIT.payloadMsg(epoch));
+    }
+
+    // Below are the messages that are part of the state transfer protocol.
+
+    /**
+     * Initialize state transfer on the current node.
+     * @param startAddress The first address of state transfer.
+     * @param endAddress    The last address of state transfer.
+     * @return  A completable future of the state transfer started response.
+     */
+    public CompletableFuture<StateTransferStartedResponse> initializeStateTransfer(long startAddress, long endAddress){
+        StateTransferRequestMsg stateTransferRequestMsg = new StateTransferRequestMsg(new InitTransferRequest(startAddress, endAddress));
+        return sendMessageWithFuture(CorfuMsgType.STATE_TRANSFER_REQUEST.payloadMsg(stateTransferRequestMsg));
     }
 }

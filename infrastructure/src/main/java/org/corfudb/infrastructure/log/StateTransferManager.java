@@ -2,15 +2,20 @@ package org.corfudb.infrastructure.log;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+import io.netty.channel.ChannelHandlerContext;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.infrastructure.IServerRouter;
 import org.corfudb.infrastructure.ServerContext;
+import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
+import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorMsg;
+import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.UnreachableClusterException;
 import org.corfudb.runtime.view.AddressSpaceView;
@@ -20,6 +25,7 @@ import org.corfudb.runtime.view.RuntimeLayout;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.concurrent.SingletonResource;
 
+import javax.annotation.Nonnull;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +37,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Builder
-public class LogStateTransferor {
+public class StateTransferManager {
 
     public enum StateTransferState{
         TRANSFERRING,
@@ -91,8 +97,6 @@ public class LogStateTransferor {
         return runtime;
     }
 
-    // api entry
-    public <T>
 
     private List<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
 
@@ -214,5 +218,11 @@ public class LogStateTransferor {
     public static synchronized void writeRecords(List<LogData> dataEntries, StreamLog streamLog) {
         log.trace("Writing data entries: {}", dataEntries);
         streamLog.append(dataEntries);
+    }
+
+    public void handleMessage(@Nonnull CorfuPayloadMsg<StateTransferRequestMsg> msg,
+                              @Nonnull ChannelHandlerContext ctx,
+                              @Nonnull IServerRouter r){
+        StateTransferRequestMsg stateTransferRequestMsg = msg.getPayload();
     }
 }

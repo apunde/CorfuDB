@@ -6,9 +6,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.log.InMemoryStreamLog;
-import org.corfudb.infrastructure.log.LogStateTransfer;
-import org.corfudb.infrastructure.log.LogStateTransferor;
-import org.corfudb.infrastructure.log.LogStateTransferor.StateTransferState;
+import org.corfudb.infrastructure.log.StateTransferManager;
+import org.corfudb.infrastructure.log.StateTransferManager.StateTransferState;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.StreamLogFiles;
 import org.corfudb.infrastructure.log.StreamLogParams;
@@ -29,6 +28,7 @@ import org.corfudb.protocols.wireprotocol.TailsRequest;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
+import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.LogUnitException;
@@ -58,6 +58,7 @@ import static org.corfudb.infrastructure.BatchWriterOperation.Type.RESET;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.SEAL;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.TAILS_QUERY;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.WRITE;
+import static org.corfudb.infrastructure.log.StateTransferManager.StateTransferState.TRANSFERRED;
 
 
 /**
@@ -102,7 +103,7 @@ public class LogUnitServer extends AbstractServer {
     private final LogUnitServerCache dataCache;
     private final StreamLog streamLog;
     private final BatchProcessor batchWriter;
-    private final LogStateTransferor logStateTransferor;
+    private final StateTransferManager stateTransferManager;
 
     private ExecutorService executor;
 
@@ -143,10 +144,10 @@ public class LogUnitServer extends AbstractServer {
 
         dataCache = new LogUnitServerCache(config, streamLog);
         batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
-        logStateTransferor = LogStateTransferor.builder()
+        stateTransferManager = StateTransferManager.builder()
                 .streamLog(streamLog)
                 .serverContext(serverContext)
-                .state(StateTransferState.TRANSFERRED).build();
+                .state(TRANSFERRED).build();
 
         if (config.enableCompaction) {
             streamLog.startCompactor();
@@ -358,17 +359,9 @@ public class LogUnitServer extends AbstractServer {
     }
 
     @ServerHandler(type = CorfuMsgType.STATE_TRANSFER_REQUEST)
-    public void handleStateTransfer(CorfuPayloadMsg<StateTransferRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
-        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
-        long startAddress = msg.getPayload().getStart();
-        long endAddress = msg.getPayload().getEnd();
-        log.trace("handleStateTransfer from {} to {}", startAddress, endAddress);
-        // invalidate layout
-        runtimeSingletonResource.get().invalidateLayout();
-        // get unknown addresses in this range
-        List<Long> unknownAddresses = streamLog.getUnknownAddressesInRange(startAddress, endAddress);
-
-
+    public void handleStateTransfer(CorfuPayloadMsg<StateTransferRequestMsg> msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.info("handleStateTransfer: {}", msg);
+        stateTransferManager.handleMessage(msg, ctx, r);
     }
 
     /**
