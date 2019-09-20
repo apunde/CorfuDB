@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.log.InMemoryStreamLog;
 import org.corfudb.infrastructure.log.StateTransferManager;
 import org.corfudb.infrastructure.log.StateTransferManager.StateTransferState;
+import org.corfudb.infrastructure.log.StateTransferWriter;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.StreamLogFiles;
 import org.corfudb.infrastructure.log.StreamLogParams;
@@ -58,7 +59,6 @@ import static org.corfudb.infrastructure.BatchWriterOperation.Type.RESET;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.SEAL;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.TAILS_QUERY;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.WRITE;
-import static org.corfudb.infrastructure.log.StateTransferManager.StateTransferState.TRANSFERRED;
 
 
 /**
@@ -144,10 +144,10 @@ public class LogUnitServer extends AbstractServer {
 
         dataCache = new LogUnitServerCache(config, streamLog);
         batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
+        StateTransferWriter stateTransferWriter = StateTransferWriter.builder()
+                .serverContext(serverContext).streamLog(streamLog).build();
         stateTransferManager = StateTransferManager.builder()
-                .streamLog(streamLog)
-                .serverContext(serverContext)
-                .state(TRANSFERRED).build();
+                .stateTransferWriter(stateTransferWriter).streamLog(streamLog).build();
 
         if (config.enableCompaction) {
             streamLog.startCompactor();

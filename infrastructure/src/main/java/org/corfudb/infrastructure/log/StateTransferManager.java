@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.math.LongRange;
 import org.corfudb.infrastructure.IServerRouter;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
@@ -19,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 @Slf4j
 @Builder
@@ -61,14 +64,13 @@ public class StateTransferManager {
 
     private List<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
 
-        Set<Long> knownAddresses = streamLog.getKnownAddressesInRange(rangeStart, rangeEnd);
-        List<Long> unknownAddresses = new ArrayList<>();
-        for (long address = rangeStart; address <= rangeEnd; address++) {
-            if (!knownAddresses.contains(address)) {
-                unknownAddresses.add(address);
-            }
-        }
-        return unknownAddresses;
+        Set<Long> knownAddresses = streamLog
+                .getKnownAddressesInRange(rangeStart, rangeEnd);
+
+        return LongStream.range(rangeStart, rangeEnd + 1)
+                .filter(address -> !knownAddresses.contains(address))
+                .boxed()
+                .collect(Collectors.toList());
     }
 
     public void handleMessage(@Nonnull CorfuPayloadMsg<StateTransferRequestMsg> msg,
