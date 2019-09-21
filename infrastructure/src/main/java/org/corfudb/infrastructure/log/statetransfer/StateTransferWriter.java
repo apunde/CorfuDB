@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static java.util.Map.*;
@@ -47,7 +48,8 @@ import static java.util.Map.*;
 public class StateTransferWriter {
 
     private static final int SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT = 60;
-    private static final int MAX_READ_RETRIES = 3;
+    private static final int MAX_RETRIES = 3;
+    private static final int MAX_WRITE_MILLISECONDS_TIMEOUT = 1000;
     private static final Duration MAX_RETRY_TIMEOUT = Duration.ofSeconds(10);
     private static final float RANDOM_FACTOR_BACKOFF = 0.5f;
 
@@ -125,7 +127,7 @@ public class StateTransferWriter {
 
     }
 
-
+    // handlePossibleTransferFailures should be recursive
     private CompletableFuture<Result<Void, StateTransferException>> handlePossibleTransferFailures
             (Result<Void, StateTransferException> transferResult, RuntimeLayout runtimeLayout){
         if(transferResult.isError()){
@@ -156,28 +158,28 @@ public class StateTransferWriter {
         List<Long> missingAddresses =
                 Ordering.natural().sortedCopy(incompleteReadException.getMissingAddresses());
 
-        CompletableFuture<Result<Void, StateTransferException>> pipeline;
+        Supplier<CompletableFuture<Result<Void, StateTransferException>>> pipeline;
 
         AtomicInteger readRetries = new AtomicInteger();
 
         if(incompleteReadException instanceof IncompleteDataReadException){
-            pipeline = CompletableFuture.supplyAsync(() -> readRecords(missingAddresses, runtimeLayout))
+            pipeline = () -> CompletableFuture.supplyAsync(() -> readRecords(missingAddresses, runtimeLayout))
                     .thenApply(result -> result.flatMap(this::writeData));
         }
         else{
             IncompleteGarbageReadException incompleteGarbageReadException =
                     (IncompleteGarbageReadException) incompleteReadException;
             pipeline =
-                    transferBatch(missingAddresses,
+                    () -> transferBatch(missingAddresses,
                             incompleteGarbageReadException.getHostAddress(), runtimeLayout);
         }
 
         try {
             CompletableFuture<Result<Void, StateTransferException>> retryResult =
                     IRetry.build(ExponentialBackoffRetry.class, RetryExhaustedException.class, () -> {
-                Result<Void, StateTransferException> joinResult = pipeline.join();
+                Result<Void, StateTransferException> joinResult = pipeline.get().join();
                 if (joinResult.isError()) {
-                    if (readRetries.getAndIncrement() >= MAX_READ_RETRIES) {
+                    if (readRetries.getAndIncrement() >= MAX_RETRIES) {
                         throw new RetryExhaustedException("Read retries are exhausted");
                     } else {
                         log.warn("Retried {} times", readRetries.get());
@@ -200,6 +202,35 @@ public class StateTransferWriter {
         catch(InterruptedException ie){
             return CompletableFuture.completedFuture(Result.error(new StateTransferFailure()));
         }
+    }
+
+    private CompletableFuture <Void, StateTransferException> handleRejectedWrite
+            (RejectedAppendException rejectedAppendException, RuntimeLayout runtimeLayout){
+        List<LogData> missingData = rejectedAppendException.getDataEntries();
+        CompletableFuture<Result<Void, StateTransferException>> pipeline;
+
+        if(rejectedAppendException instanceof RejectedDataException){
+            pipeline = CompletableFuture.supplyAsync(() -> writeData(missingData));
+        }
+        else{
+            List<Long> missingAddresses = missingData.stream()
+                    .map(x -> x.getGlobalAddress()).collect(Collectors.toList());
+            pipeline = CompletableFuture
+                    .supplyAsync(() -> writeGarbage(missingData))
+                    .thenApply(garbageWriteResult -> garbageWriteResult
+                            .flatMap(result -> readRecords(missingAddresses, runtimeLayout)))
+                    .thenApply(dataReadResult -> dataReadResult.flatMap(this::writeData));
+        }
+
+        for(int i = 0; i < MAX_RETRIES; i++){
+            Result<Void, StateTransferException> pipelineJoinResult = pipeline.join();
+            if(pipelineJoinResult.isError()){
+
+            }
+
+        }
+
+
     }
 
 
@@ -320,29 +351,28 @@ public class StateTransferWriter {
 
     private Result<Void, StateTransferException> writeGarbage(List<LogData> garbageEntries){
         log.trace("Writing garbage entries: {}", garbageEntries);
-        return writeRecords(garbageEntries, RejectedAppendException.EntryType.GARBAGE);
+        return writeRecords(garbageEntries).mapError(e -> new RejectedGarbageException(e.getDataEntries()));
     }
 
     private Result<Void, StateTransferException> writeData(List<LogData> dataEntries){
         log.trace("Writing data entries: {}", dataEntries);
-        return writeRecords(dataEntries, RejectedAppendException.EntryType.DATA);
+        return writeRecords(dataEntries).mapError(e -> new RejectedDataException(e.getDataEntries()));
     }
 
     /**
-     * Appends data (or garbage) to the streamlog.
+     * Appends data (or garbage) to the stream log.
      *
      * @param dataEntries The list of entries (data or garbage).
      * @return A result of a record append.
      */
-    private Result<Void, StateTransferException> writeRecords(List<LogData> dataEntries,
-                                                             RejectedAppendException.EntryType entryType) {
+    private Result<Void, RejectedAppendException> writeRecords(List<LogData> dataEntries) {
 
         Result<Void, RuntimeException> result = Result.of(() -> {
             streamLog.append(dataEntries);
             return null;
         });
 
-        return result.mapError(x -> new RejectedAppendException(entryType, dataEntries));
+        return result.mapError(x -> new RejectedAppendException(dataEntries));
     }
 
 }

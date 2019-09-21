@@ -11,13 +11,6 @@ import java.util.List;
  */
 @AllArgsConstructor
 public class RejectedAppendException extends StateTransferException {
-    enum EntryType{
-        DATA,
-        GARBAGE
-    }
-
-    @Getter
-    private final EntryType entryType;
     @Getter
     private final List<LogData> dataEntries;
 }
