@@ -2,6 +2,7 @@ package org.corfudb.infrastructure.log.statetransfer;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Ordering;
 import com.google.common.collect.Sets;
 import lombok.Builder;
 import lombok.Getter;
@@ -11,34 +12,45 @@ import lombok.extern.slf4j.Slf4j;
 import org.corfudb.common.result.Result;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.infrastructure.log.StreamLog;
+import org.corfudb.infrastructure.log.statetransfer.IncompleteReadException.EntryType;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.exceptions.RetryExhaustedException;
 import org.corfudb.runtime.exceptions.UnreachableClusterException;
 import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
 import org.corfudb.util.concurrent.SingletonResource;
+import org.corfudb.util.retry.ExponentialBackoffRetry;
+import org.corfudb.util.retry.IRetry;
+import org.corfudb.util.retry.RetryNeededException;
 
-import java.util.AbstractMap;
+import java.time.Duration;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static java.util.Map.*;
 
 /**
- * This class is responsible for reading from the remote logunits and writing to the local log.
+ * This class is responsible for reading from the remote log units and writing to the local log.
  */
 @Slf4j
 @Builder
 public class StateTransferWriter {
 
     private static final int SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT = 60;
+    private static final int MAX_READ_RETRIES = 3;
+    private static final Duration MAX_RETRY_TIMEOUT = Duration.ofSeconds(10);
+    private static final float RANDOM_FACTOR_BACKOFF = 0.5f;
+
 
     @Getter
     @Setter
@@ -98,35 +110,117 @@ public class StateTransferWriter {
                 mapServersToBatches(addresses, readSize, runtimeLayout);
 
         serversToBatches.entrySet().stream().map(entry -> {
-            // process every batch
+            // Process every batch, handling errors if any, updating state otherwise;
+            // propagating to the caller if the timeout occurs,
+            // the retries are exhausted, or unexpected error happened.
             String server = entry.getKey();
             List<List<Long>> batches = entry.getValue();
             batches.stream().map(batch -> {
-
+                transferBatch(batch, server, runtimeLayout)
+                        .thenCompose(transferResult ->
+                                handlePossibleTransferFailures(transferResult, runtimeLayout));
             })
 
         })
 
     }
 
+
+    private CompletableFuture<Result<Void, StateTransferException>> handlePossibleTransferFailures
+            (Result<Void, StateTransferException> transferResult, RuntimeLayout runtimeLayout){
+        if(transferResult.isError()){
+            StateTransferException error = transferResult.getError();
+            if(error instanceof IncompleteReadException){
+                IncompleteReadException incompleteReadException = (IncompleteReadException) error;
+                return handleIncompleteRead(incompleteReadException, runtimeLayout);
+            }
+            else if(error instanceof RejectedAppendException){
+                RejectedAppendException rejectedAppendException = (RejectedAppendException) error;
+
+            }
+            else{
+                log.error("Unexpected error occured:", error);
+                Result<Void, StateTransferException> stateTransferFailureResult =
+                        transferResult.mapError(e -> new StateTransferFailure());
+                return CompletableFuture.completedFuture(stateTransferFailureResult);
+            }
+        }
+        else{
+            return CompletableFuture.completedFuture(transferResult);
+        }
+    }
+
+
+    private CompletableFuture<Result<Void, StateTransferException>> handleIncompleteRead
+            (IncompleteReadException incompleteReadException, RuntimeLayout runtimeLayout) {
+        List<Long> missingAddresses =
+                Ordering.natural().sortedCopy(incompleteReadException.getMissingAddresses());
+
+        CompletableFuture<Result<Void, StateTransferException>> pipeline;
+
+        AtomicInteger readRetries = new AtomicInteger();
+
+        if(incompleteReadException instanceof IncompleteDataReadException){
+            pipeline = CompletableFuture.supplyAsync(() -> readRecords(missingAddresses, runtimeLayout))
+                    .thenApply(result -> result.flatMap(this::writeData));
+        }
+        else{
+            IncompleteGarbageReadException incompleteGarbageReadException =
+                    (IncompleteGarbageReadException) incompleteReadException;
+            pipeline =
+                    transferBatch(missingAddresses,
+                            incompleteGarbageReadException.getHostAddress(), runtimeLayout);
+        }
+
+        try {
+            CompletableFuture<Result<Void, StateTransferException>> retryResult =
+                    IRetry.build(ExponentialBackoffRetry.class, RetryExhaustedException.class, () -> {
+                Result<Void, StateTransferException> joinResult = pipeline.join();
+                if (joinResult.isError()) {
+                    if (readRetries.getAndIncrement() >= MAX_READ_RETRIES) {
+                        throw new RetryExhaustedException("Read retries are exhausted");
+                    } else {
+                        log.warn("Retried {} times", readRetries.get());
+                        throw new RetryNeededException();
+                    }
+
+                } else {
+                    return CompletableFuture.completedFuture(joinResult);
+                }
+
+            }).setOptions(retry -> {
+                retry.setMaxRetryThreshold(MAX_RETRY_TIMEOUT);
+                retry.setRandomPortion(RANDOM_FACTOR_BACKOFF);
+            }).run();
+
+            return CompletableFuture.completedFuture(retryResult.join()
+                    .mapError(e -> new StateTransferFailure()));
+
+        }
+        catch(InterruptedException ie){
+            return CompletableFuture.completedFuture(Result.error(new StateTransferFailure()));
+        }
+    }
+
+
     /**
-     * Read garbage -> write garbage -> read records -> write records.
+     * Read garbage -> write garbage -> read data -> write data.
      *
      * @param addresses A batch of consecutive addresses.
      * @param server    A server to read garbage from.
      * @param runtimeLayout A runtime layout to use for connections.
      * @return Result of an empty value if a pipeline executes correctly;
-     *         a result containing a first encountered error otherwise.
+     *         a result containing the first encountered error otherwise.
      */
-    public CompletableFuture<Result<Void, StateTransferException>> transferBatch
+    private CompletableFuture<Result<Void, StateTransferException>> transferBatch
             (List<Long> addresses, String server, RuntimeLayout runtimeLayout) {
         return readGarbage(addresses, server, runtimeLayout)
                 .thenApply(readGarbageResult -> readGarbageResult
-                        .flatMap(this::writeRecords))
+                        .flatMap(this::writeGarbage))
                 .thenApply(writeGarbageResult ->
                         writeGarbageResult.flatMap(x ->
-                                readRecords(addresses, runtimeLayout, readOptions)))
-                .thenApply(readRecordsResult -> readRecordsResult.flatMap(this::writeRecords));
+                                readRecords(addresses, runtimeLayout)))
+                .thenApply(readDataResult -> readDataResult.flatMap(this::writeData));
     }
 
     /**
@@ -169,7 +263,7 @@ public class StateTransferWriter {
      * @param runtimeLayout A runtime layout to use for connections.
      * @return A completable future of a garbage read response.
      */
-    public static CompletableFuture<Result<List<LogData>, StateTransferException>> readGarbage(List<Long> addresses,
+    private static CompletableFuture<Result<List<LogData>, StateTransferException>> readGarbage(List<Long> addresses,
                                                                                                String server,
                                                                                                RuntimeLayout
                                                                                                        runtimeLayout) {
@@ -178,7 +272,10 @@ public class StateTransferWriter {
                 .readGarbageEntries(addresses)
                 .thenApply(readResponse -> {
                     Map<Long, LogData> readResponseAddresses = readResponse.getAddresses();
-                    return handleRead(addresses, readResponseAddresses);
+                    return handleRead(addresses, readResponseAddresses)
+                            .mapError(e ->
+                                    new IncompleteGarbageReadException(server,
+                                            e.getMissingAddresses()));
                 });
     }
 
@@ -187,23 +284,23 @@ public class StateTransferWriter {
      *
      * @param addresses     The list of addresses.
      * @param runtimeLayout A runtime layout to use for connections.
-     * @param readOptions   The read options to use for the address space view.
      * @return A result of reading records.
      */
-    public static Result<List<LogData>, StateTransferException> readRecords(List<Long> addresses,
-                                                                            RuntimeLayout runtimeLayout,
-                                                                            ReadOptions readOptions) {
+    private static Result<List<LogData>, StateTransferException> readRecords(List<Long> addresses,
+                                                                             RuntimeLayout runtimeLayout) {
         log.trace("Reading data for addresses: {}", addresses);
 
         AddressSpaceView addressSpaceView = runtimeLayout.getRuntime().getAddressSpaceView();
 
-        return handleRead(addresses, addressSpaceView.read(addresses, readOptions).entrySet()
+        return handleRead(addresses,
+                addressSpaceView.read(addresses, StateTransferWriter.readOptions).entrySet()
                 .stream()
-                .collect(Collectors.toMap(Entry::getKey, entry -> (LogData) entry.getValue())));
+                .collect(Collectors.toMap(Entry::getKey, entry -> (LogData) entry.getValue())))
+                .mapError(e -> new IncompleteDataReadException(e.getMissingAddresses()));
     }
 
 
-    private static Result<List<LogData>, StateTransferException> handleRead(List<Long> addresses,
+    private static Result<List<LogData>, IncompleteReadException> handleRead(List<Long> addresses,
                                                                             Map<Long, LogData> readResult) {
         List<Long> transferredAddresses =
                 addresses.stream().filter(readResult::containsKey)
@@ -221,21 +318,31 @@ public class StateTransferWriter {
     }
 
 
+    private Result<Void, StateTransferException> writeGarbage(List<LogData> garbageEntries){
+        log.trace("Writing garbage entries: {}", garbageEntries);
+        return writeRecords(garbageEntries, RejectedAppendException.EntryType.GARBAGE);
+    }
+
+    private Result<Void, StateTransferException> writeData(List<LogData> dataEntries){
+        log.trace("Writing data entries: {}", dataEntries);
+        return writeRecords(dataEntries, RejectedAppendException.EntryType.DATA);
+    }
+
     /**
      * Appends data (or garbage) to the streamlog.
      *
      * @param dataEntries The list of entries (data or garbage).
      * @return A result of a record append.
      */
-    public Result<Void, StateTransferException> writeRecords(List<LogData> dataEntries) {
-        log.trace("Writing data entries: {}", dataEntries);
+    private Result<Void, StateTransferException> writeRecords(List<LogData> dataEntries,
+                                                             RejectedAppendException.EntryType entryType) {
 
         Result<Void, RuntimeException> result = Result.of(() -> {
             streamLog.append(dataEntries);
             return null;
         });
 
-        return result.mapError(x -> new RejectedAppendException(dataEntries));
+        return result.mapError(x -> new RejectedAppendException(entryType, dataEntries));
     }
 
 }
