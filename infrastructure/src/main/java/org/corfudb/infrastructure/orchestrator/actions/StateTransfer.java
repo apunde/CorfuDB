@@ -209,7 +209,7 @@ public class StateTransfer {
         long ts1 = System.currentTimeMillis();
 
         // Don't cache the read results on server for state transfer.
-        Map<Long, ILogData> dataMap = runtime.getAddressSpaceView().re  ad(chunk, readOptions);
+        Map<Long, ILogData> dataMap = runtime.getAddressSpaceView().read(chunk, readOptions);
 
         long ts2 = System.currentTimeMillis();
 

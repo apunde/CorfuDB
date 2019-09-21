@@ -1,13 +1,16 @@
-package org.corfudb.infrastructure.log;
+package org.corfudb.infrastructure.log.statetransfer;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.common.result.Result;
 import org.corfudb.infrastructure.ServerContext;
+import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
@@ -17,10 +20,10 @@ import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
-import org.corfudb.util.CFUtils;
 import org.corfudb.util.concurrent.SingletonResource;
-
 import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -50,6 +53,12 @@ public class StateTransferWriter {
     private SingletonResource<CorfuRuntime> runtimeSingletonResource
             = SingletonResource.withInitial(this::getNewCorfuRuntime);
 
+    private static final ReadOptions readOptions = ReadOptions.builder()
+            .waitForHole(true)
+            .clientCacheable(false)
+            .serverCacheable(false)
+            .build();
+
     private CorfuRuntime getNewCorfuRuntime(){
         CorfuRuntime.CorfuRuntimeParameters params
                 = serverContext.getManagementRuntimeParameters();
@@ -78,6 +87,22 @@ public class StateTransferWriter {
         throw new UnreachableClusterException("Runtime stalled. Invoking systemDownHandler after "
                 + SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT + " unsuccessful tries.");
     };
+
+
+    public void stateTransfer(List<Long> addresses){
+        int readSize = runtimeSingletonResource.get().getParameters().getBulkReadSize();
+        RuntimeLayout runtimeLayout = runtimeSingletonResource.get().getLayoutView().getRuntimeLayout();
+        Map<String, List<List<Long>>> serversToBatches =
+                mapServersToBatches(addresses, readSize, runtimeLayout);
+        serversToBatches.entrySet().stream().map(entry -> {
+            // process every batch
+            String server = entry.getKey();
+            List<List<Long>> batches = entry.getValue();
+
+
+        })
+
+    }
 
     /** Creates a map from servers to the address batches they are responsible for.
      *
@@ -113,72 +138,70 @@ public class StateTransferWriter {
      * Reads garbage from other log units in parallel.
      *
      * @param addresses     The addresses corresponding to the garbage entries.
-     * @param bulkReadSize  The number of records to read within one RPC call.
+     * @param server        Target server.
      * @param runtimeLayout A runtime layout to use for connections.
-     * @return A completable future of a list of garbage responses.
+     * @return A completable future of a garbage read response.
      */
-    public static synchronized CompletableFuture<List<ReadResponse>> readGarbage(List<Long> addresses,
-                                                                                 int bulkReadSize,
+    public static CompletableFuture<ReadResponse> readGarbage(List<Long> addresses,
+                                                                                 String server,
                                                                                  RuntimeLayout
                                                                                          runtimeLayout) {
         log.trace("Reading garbage for addresses: {}", addresses);
-        Map<String, List<List<Long>>> serverToGarbageAddresses =
-                mapServersToBatches(addresses, bulkReadSize, runtimeLayout);
-
-        List<CompletableFuture<ReadResponse>> garbageResponses = serverToGarbageAddresses
-                .entrySet()
-                .stream()
-                .flatMap(entry -> entry.getValue()
-                        .stream()
-                        .map(batch ->
-                                runtimeLayout
-                                        .getLogUnitClient(entry.getKey())
-                                        .readGarbageEntries(batch)))
-                .collect(Collectors.toList());
-        return CFUtils.sequence(garbageResponses);
+        return runtimeLayout.getLogUnitClient(server).readGarbageEntries(addresses);
     }
 
     /**
      * Reads data entries by utilizing the replication protocol.
      *
      * @param addresses        The list of addresses.
-     * @param bulkReadSize     The number of records to read within one RPC call.
-     * @param runtimeLayout    A runtime layout to use for connections.
      * @param addressSpaceView A view of the address space to call a read via a protocol.
      * @param readOptions      The read options to use for the address space view.
-     * @return A map from address to the LogData entry.
+     * @return A result of reading records, with possible exceptions.
      */
-    @VisibleForTesting
-    public static synchronized Map<Long, ILogData> readRecords(List<Long> addresses,
-                                                               int bulkReadSize,
-                                                               RuntimeLayout runtimeLayout,
+    public static Result<List<ILogData>, StateTransferException> readRecords(List<Long> addresses,
                                                                AddressSpaceView addressSpaceView,
                                                                ReadOptions readOptions) {
-        log.trace("Reading data entries: {}", addresses);
-        Map<String, List<List<Long>>> serverToAddresses =
-                mapServersToBatches(addresses, bulkReadSize, runtimeLayout);
-
-        return serverToAddresses
-                .values()
-                .stream()
-                .flatMap(batches ->
-                        batches.stream().flatMap
-                                (batch -> addressSpaceView
-                                        .read(batch, readOptions)
-                                        .entrySet()
-                                        .stream()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        log.trace("Reading data for addresses: {}", addresses);
+        Map<Long, ILogData> readResult = addressSpaceView.read(addresses, readOptions);
+        List<Long> transferredAddresses =
+                addresses.stream().filter(readResult::containsKey)
+                        .collect(Collectors.toList());
+        if(transferredAddresses.equals(addresses)){
+            return Result.of(() -> readResult.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(Map.Entry::getValue).collect(Collectors.toList()));
+        }
+        else{
+            HashSet<Long> transferredSet = new HashSet<>(transferredAddresses);
+            HashSet<Long> entireSet = new HashSet<>(addresses);
+            return new Result<>(new ArrayList<>(),
+                    new IncompleteReadException(Sets.difference(entireSet, transferredSet)));
+        }
     }
 
+
     /**
-     * Write records to the current stream log.
+     *  Appends data (or garbage) to the streamlog, then lifting all possible errors in the value.
      *
      * @param dataEntries The list of entries (data or garbage).
      * @param streamLog   The instance of the underlying stream log.
+     * @return A result of a record append.
      */
-    public static synchronized void writeRecords(List<LogData> dataEntries, StreamLog streamLog) {
+    public static Result<Void, RuntimeException> writeRecords(List<LogData> dataEntries, StreamLog streamLog) {
         log.trace("Writing data entries: {}", dataEntries);
-        streamLog.append(dataEntries);
+
+        Result<Void, RuntimeException> result = Result.of(() -> {
+            streamLog.append(dataEntries);
+            return null;
+        });
+
+        if(result.isError()){
+            return new Result<>(new RejectedAppendException(dataEntries));
+        }
+        else{
+            return result;
+        }
+
     }
 
 }

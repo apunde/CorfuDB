@@ -1,4 +1,4 @@
-package org.corfudb.infrastructure.log;
+package org.corfudb.infrastructure.log.statetransfer;
 
 import io.netty.channel.ChannelHandlerContext;
 import lombok.AllArgsConstructor;
@@ -6,22 +6,25 @@ import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang.math.LongRange;
 import org.corfudb.infrastructure.IServerRouter;
+import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
+import org.corfudb.protocols.wireprotocol.statetransfer.InitTransferRequest;
+import org.corfudb.protocols.wireprotocol.statetransfer.Response;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestType;
 
 import javax.annotation.Nonnull;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
+
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentStateTransferState.TRANSFERRING;
 
 @Slf4j
 @Builder
@@ -73,6 +76,21 @@ public class StateTransferManager {
                 .collect(Collectors.toList());
     }
 
+    private CompletableFuture<Response> handleInitTransfer(InitTransferRequest request){
+        CurrentTransferSegment segment =
+                new CurrentTransferSegment(request.getAddressStart(), request.getAddressEnd());
+        // 1. NO-STATUS: initialize and update map
+        if(!currentTransferSegmentStatusMap.containsKey(segment)){
+            CurrentTransferSegmentStatus status =
+                    new CurrentTransferSegmentStatus(TRANSFERRING, segment.getStartAddress());
+            currentTransferSegmentStatusMap.put(segment, status);
+
+        }
+        else{
+
+        }
+    }
+
     public void handleMessage(@Nonnull CorfuPayloadMsg<StateTransferRequestMsg> msg,
                               @Nonnull ChannelHandlerContext ctx,
                               @Nonnull IServerRouter r){
@@ -83,6 +101,9 @@ public class StateTransferManager {
 
         switch(stateTransferRequestType){
             case INIT_TRANSFER:
+                InitTransferRequest request = (InitTransferRequest) stateTransferRequestMsg.getRequest();
+                handleInitTransfer(request);
+
 
         }
     }
