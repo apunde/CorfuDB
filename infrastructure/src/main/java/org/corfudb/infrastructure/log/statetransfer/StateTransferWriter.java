@@ -22,7 +22,6 @@ import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
-import org.corfudb.util.CFUtils;
 import org.corfudb.util.Sleep;
 import org.corfudb.util.concurrent.SingletonResource;
 import org.corfudb.util.retry.ExponentialBackoffRetry;
@@ -32,9 +31,11 @@ import org.corfudb.util.retry.RetryNeededException;
 import java.time.Duration;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,6 +43,9 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static java.util.Map.*;
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.*;
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentStateTransferState.FAILED;
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentStateTransferState.TRANSFERRED;
 
 /**
  * This class is responsible for reading from the remote log units and writing to the local log.
@@ -108,14 +112,14 @@ public class StateTransferWriter {
     };
 
 
-    public void stateTransfer(List<Long> addresses) {
+    public void stateTransfer(List<Long> addresses, CurrentTransferSegment segment, Map<CurrentTransferSegment, CurrentTransferSegmentStatus> statusMap) {
         int readSize = runtimeSingletonResource.get().getParameters().getBulkReadSize();
         RuntimeLayout runtimeLayout = runtimeSingletonResource.get().getLayoutView().getRuntimeLayout();
         Map<String, List<List<Long>>> serversToBatches =
                 mapServersToBatches(addresses, readSize, runtimeLayout);
 
         serversToBatches.entrySet().stream().map(entry -> {
-            // Process every batch, handling errors if any, updating state otherwise;
+            // Process every batch, handling errors if any, updating state,
             // propagating to the caller if the timeout occurs,
             // the retries are exhausted, or unexpected error happened.
             String server = entry.getKey();
@@ -123,15 +127,40 @@ public class StateTransferWriter {
             batches.stream().map(batch -> {
                 transferBatch(batch, server, runtimeLayout)
                         .thenCompose(transferResult ->
-                                handlePossibleTransferFailures(transferResult, runtimeLayout, new AtomicInteger()));
+                                handlePossibleTransferFailures(transferResult, runtimeLayout, new AtomicInteger()))
+                .thenCompose(transferResult -> updateSegmentState(transferResult, segment, statusMap));
             })
 
         })
 
     }
 
-    private CompletableFuture<Result<Void, StateTransferException>> handlePossibleTransferFailures
-    (Result<Void, StateTransferException> transferResult, RuntimeLayout runtimeLayout, AtomicInteger retries) {
+    // completeExceptionally -> interrupt pipeline -> cleanup -> report
+    private CompletableFuture<Result<Void, StateTransferException>> updateSegmentState(Result<Long, StateTransferException> transferResult,
+                                                                                       CurrentTransferSegment segment,
+                                                                                       Map<CurrentTransferSegment, CurrentTransferSegmentStatus> statusMap){
+        if(transferResult.isValue()){
+            statusMap.computeIfPresent(segment, (seg, status) -> {
+                long maxTransferredAddress = transferResult.get();
+                status.setLastTransferredAddress(maxTransferredAddress);
+                if(maxTransferredAddress == segment.getEndAddress()){
+                    status.setSegmentStateTransferState(TRANSFERRED);
+                }
+                return status;
+            } );
+        }
+        else{
+            log.error("Unrecoverable transfer error occurred: ", transferResult.getError());
+            statusMap.computeIfPresent(segment, (seg, status) -> {
+                status.setSegmentStateTransferState(FAILED);
+                return status;
+            });
+
+        }
+    }
+
+    private CompletableFuture<Result<Long, StateTransferException>> handlePossibleTransferFailures
+    (Result<Long, StateTransferException> transferResult, RuntimeLayout runtimeLayout, AtomicInteger retries) {
         if (transferResult.isError()) {
             StateTransferException error = transferResult.getError();
             if (error instanceof IncompleteReadException) {
@@ -144,7 +173,7 @@ public class StateTransferWriter {
                 return handlePossibleTransferFailures(tryHandleRejectedWrite(rejectedAppendException, runtimeLayout, retries)
                         .join(), runtimeLayout, retries);
             } else {
-                Result<Void, StateTransferException> stateTransferFailureResult =
+                Result<Long, StateTransferException> stateTransferFailureResult =
                         transferResult.mapError(e -> new StateTransferFailure());
                 return CompletableFuture.completedFuture(stateTransferFailureResult);
             }
@@ -154,7 +183,7 @@ public class StateTransferWriter {
     }
 
 
-    private Supplier<CompletableFuture<Result<Void, StateTransferException>>> getErrorHandlingPipeline
+    private Supplier<CompletableFuture<Result<Long, StateTransferException>>> getErrorHandlingPipeline
             (StateTransferException exception, RuntimeLayout runtimeLayout) {
         if (exception instanceof IncompleteReadException) {
             IncompleteReadException incompleteReadException = (IncompleteReadException) exception;
@@ -189,18 +218,18 @@ public class StateTransferWriter {
         }
     }
 
-    private CompletableFuture<Result<Void, StateTransferException>> tryHandleIncompleteRead
+    private CompletableFuture<Result<Long, StateTransferException>> tryHandleIncompleteRead
             (IncompleteReadException incompleteReadException, RuntimeLayout runtimeLayout, AtomicInteger readRetries) {
 
         try {
-            CompletableFuture<Result<Void, StateTransferException>> retryResult =
+            CompletableFuture<Result<Long, StateTransferException>> retryResult =
                     IRetry.build(ExponentialBackoffRetry.class, RetryExhaustedException.class, () -> {
 
                         // Get a pipeline function.
-                        Supplier<CompletableFuture<Result<Void, StateTransferException>>> pipeline =
+                        Supplier<CompletableFuture<Result<Long, StateTransferException>>> pipeline =
                                 getErrorHandlingPipeline(incompleteReadException, runtimeLayout);
                         // Extract the result.
-                        Result<Void, StateTransferException> joinResult = pipeline.get().join();
+                        Result<Long, StateTransferException> joinResult = pipeline.get().join();
                         if (joinResult.isError()) {
 
                             // If an error occurred, increment retries.
@@ -242,15 +271,15 @@ public class StateTransferWriter {
         }
     }
 
-    private CompletableFuture<Result<Void, StateTransferException>> tryHandleRejectedWrite
+    private CompletableFuture<Result<Long, StateTransferException>> tryHandleRejectedWrite
             (RejectedAppendException rejectedAppendException, RuntimeLayout runtimeLayout, AtomicInteger writeRetries) {
 
         if(writeRetries.get() < MAX_RETRIES){
             // Get a pipeline function.
-            Supplier<CompletableFuture<Result<Void, StateTransferException>>> pipeline
+            Supplier<CompletableFuture<Result<Long, StateTransferException>>> pipeline
                     = getErrorHandlingPipeline(rejectedAppendException, runtimeLayout);
             // Extract the result.
-            Result<Void, StateTransferException> joinResult = pipeline.get().join();
+            Result<Long, StateTransferException> joinResult = pipeline.get().join();
 
             // If the result is an error, increment retries.
             if (joinResult.isError()) {
@@ -288,7 +317,7 @@ public class StateTransferWriter {
      * @return Result of an empty value if a pipeline executes correctly;
      * a result containing the first encountered error otherwise.
      */
-    private CompletableFuture<Result<Void, StateTransferException>> transferBatch
+    private CompletableFuture<Result<Long, StateTransferException>> transferBatch
     (List<Long> addresses, String server, RuntimeLayout runtimeLayout) {
         return readGarbage(addresses, server, runtimeLayout)
                 .thenApply(readGarbageResult -> readGarbageResult
@@ -394,12 +423,12 @@ public class StateTransferWriter {
     }
 
 
-    private Result<Void, StateTransferException> writeGarbage(List<LogData> garbageEntries) {
+    private Result<Long, StateTransferException> writeGarbage(List<LogData> garbageEntries) {
         log.trace("Writing garbage entries: {}", garbageEntries);
         return writeRecords(garbageEntries).mapError(e -> new RejectedGarbageException(e.getDataEntries()));
     }
 
-    private Result<Void, StateTransferException> writeData(List<LogData> dataEntries) {
+    private Result<Long, StateTransferException> writeData(List<LogData> dataEntries) {
         log.trace("Writing data entries: {}", dataEntries);
         return writeRecords(dataEntries).mapError(e -> new RejectedDataException(e.getDataEntries()));
     }
@@ -408,13 +437,18 @@ public class StateTransferWriter {
      * Appends data (or garbage) to the stream log.
      *
      * @param dataEntries The list of entries (data or garbage).
-     * @return A result of a record append.
+     * @return A result of a record append, containing the max written address.
      */
-    private Result<Void, RejectedAppendException> writeRecords(List<LogData> dataEntries) {
+    private Result<Long, RejectedAppendException> writeRecords(List<LogData> dataEntries) {
 
-        Result<Void, RuntimeException> result = Result.of(() -> {
+        Result<Long, RuntimeException> result = Result.of(() -> {
             streamLog.append(dataEntries);
-            return null;
+            Optional<Long> maxWrittenAddress =
+                    dataEntries.stream()
+                            .map(IMetadata::getGlobalAddress)
+                            .max(Comparator.comparing(Long::valueOf));
+            // Should be present as we've checked it during the previous stages.
+            return maxWrittenAddress.orElse(null);
         });
 
         return result.mapError(x -> new RejectedAppendException(dataEntries));

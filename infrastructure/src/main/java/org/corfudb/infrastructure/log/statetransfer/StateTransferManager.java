@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NonNull;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.IServerRouter;
 import org.corfudb.infrastructure.log.StreamLog;
@@ -42,13 +43,14 @@ public class StateTransferManager {
     @AllArgsConstructor
     @EqualsAndHashCode
     @Getter
-    private static class CurrentTransferSegment{
+    public static class CurrentTransferSegment{
         private final long startAddress;
         private final long endAddress;
     }
     @AllArgsConstructor
     @Getter
-    private static class CurrentTransferSegmentStatus{
+    @Setter
+    public static class CurrentTransferSegmentStatus{
         private SegmentStateTransferState segmentStateTransferState;
         private long lastTransferredAddress;
     }
@@ -86,6 +88,7 @@ public class StateTransferManager {
             currentTransferSegmentStatusMap.put(segment, status);
 
         }
+        // 2. It's there -> report status
         else{
 
         }
