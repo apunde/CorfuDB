@@ -11,7 +11,8 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public enum StateTransferResponseType {
 
-    TRANSFER_STARTED(0, StateTransferStartedResponse::new);
+    TRANSFER_STARTED(0, StateTransferStartedResponse::new),
+    TRANSFER_IN_PROGRESS(1, StateTransferInProgressResponse::new);
 
     @Getter
     private final int responseType;

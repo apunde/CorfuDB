@@ -6,13 +6,6 @@ package org.corfudb.protocols.wireprotocol.statetransfer;
 public interface Request {
 
     /**
-     * Returns the type of the request.
-     *
-     * @return type of request
-     */
-    StateTransferRequestType getRequestType();
-
-    /**
      * Serialize this request into a byte array
      *
      * @return serialized bytes of the request

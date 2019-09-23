@@ -14,7 +14,8 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public enum StateTransferRequestType {
 
-    INIT_TRANSFER(0, InitTransferRequest::new);
+    INIT_TRANSFER(0, InitTransferRequest::new),
+    POLL_TRANSFER(1, PollTransferRequest::new);
 
     @Getter
     private final int requestType;

@@ -359,7 +359,7 @@ public class LogUnitServer extends AbstractServer {
     }
 
     /**
-     * Handle state transfer request with a state transfer manager.
+     * Handle state transfer request using a state transfer manager.
      * @param msg State transfer request message.
      * @param ctx ChannelHandlerContext.
      * @param r Server router.
