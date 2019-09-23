@@ -34,6 +34,7 @@ import org.corfudb.runtime.view.Layout.LayoutSegment;
 import org.corfudb.runtime.view.Layout.LayoutStripe;
 import org.corfudb.util.CFUtils;
 
+import static java.util.AbstractMap.*;
 import static org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments.SegmentState.*;
 
 /**
@@ -110,12 +111,10 @@ public class RestoreRedundancyMergeSegments extends Action {
         }
 
         public ImmutableMap<Segment, SegmentState> createStatusMap(Map<LayoutSegment, Set<LayoutStripe>> missingStripesMap){
-            Map<Segment, SegmentState> map = missingStripesMap.entrySet().stream().map(entry -> {
-                LayoutSegment entryKey = entry.getKey();
+            Map<Segment, SegmentState> map = missingStripesMap.keySet().stream().map(entryKey -> {
                 Segment segment = new Segment(entryKey.getStart(), entryKey.getEnd());
-                SegmentState state = NOT_TRANSFERRED;
-                return new AbstractMap.SimpleEntry<>(segment, state);
-            }).collect(Collectors.toMap(entry -> entry.getKey(), entry -> entry.getValue()));
+                return new AbstractMap.SimpleEntry<>(segment, NOT_TRANSFERRED);
+            }).collect(Collectors.toMap(SimpleEntry::getKey, SimpleEntry::getValue));
             return ImmutableMap.copyOf(map);
         }
 
@@ -153,9 +152,19 @@ public class RestoreRedundancyMergeSegments extends Action {
                 layout.getSegments().get(layoutSegmentIndex).getAllLogServers());
     }
 
+    // Prepare message based on the current of the segment.
     private CompletableFuture<Response> prepareMsg(Segment segment,
                                                    SegmentState state,
                                                    CorfuRuntime runtime){
+        if(state.equals(NOT_TRANSFERRED)){
+
+        }
+        else if(state.equals(TRANSFERRING)){
+
+        }
+        else{
+
+        }
         return runtime
                 .getLayoutView()
                 .getRuntimeLayout()
