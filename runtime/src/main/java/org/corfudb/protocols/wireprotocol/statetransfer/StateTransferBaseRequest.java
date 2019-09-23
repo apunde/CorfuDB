@@ -28,7 +28,7 @@ public abstract class StateTransferBaseRequest implements Request {
      *
      * @return type of request
      */
-    abstract StateTransferRequestType getRequestType();
+    public abstract StateTransferRequestType getRequestType();
 
     @Override
     public byte[] getSerialized() {

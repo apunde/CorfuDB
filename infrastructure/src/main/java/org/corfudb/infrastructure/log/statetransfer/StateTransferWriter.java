@@ -22,6 +22,7 @@ import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
+import org.corfudb.util.CFUtils;
 import org.corfudb.util.Sleep;
 import org.corfudb.util.concurrent.SingletonResource;
 import org.corfudb.util.retry.ExponentialBackoffRetry;
@@ -118,25 +119,28 @@ public class StateTransferWriter {
         Map<String, List<List<Long>>> serversToBatches =
                 mapServersToBatches(addresses, readSize, runtimeLayout);
 
-        serversToBatches.entrySet().stream().map(entry -> {
+        CFUtils.sequence(serversToBatches.entrySet().stream().map(entry -> {
             // Process every batch, handling errors if any, updating state,
             // propagating to the caller if the timeout occurs,
             // the retries are exhausted, or unexpected error happened.
             String server = entry.getKey();
             List<List<Long>> batches = entry.getValue();
-            batches.stream().map(batch -> {
-                transferBatch(batch, server, runtimeLayout)
-                        .thenCompose(transferResult ->
-                                handlePossibleTransferFailures(transferResult, runtimeLayout, new AtomicInteger()))
-                .thenCompose(transferResult -> updateSegmentState(transferResult, segment, statusMap));
-            })
-
-        })
+            List<CompletableFuture<Void>> batchTransferResult = batches.stream().map(batch ->
+                    transferBatch(batch, server, runtimeLayout)
+                    .thenCompose(transferResult ->
+                            handlePossibleTransferFailures(
+                                    transferResult,
+                                    runtimeLayout,
+                                    new AtomicInteger()))
+                    .thenCompose(transferResult ->
+                            updateSegmentState(transferResult, segment, statusMap)))
+                    .collect(Collectors.toList());
+            return CFUtils.sequence(batchTransferResult);
+        }).collect(Collectors.toList())).join();
 
     }
 
-    // completeExceptionally -> interrupt pipeline -> cleanup -> report
-    private CompletableFuture<Result<Void, StateTransferException>> updateSegmentState(Result<Long, StateTransferException> transferResult,
+    private CompletableFuture<Void> updateSegmentState(Result<Long, StateTransferException> transferResult,
                                                                                        CurrentTransferSegment segment,
                                                                                        Map<CurrentTransferSegment, CurrentTransferSegmentStatus> statusMap){
         if(transferResult.isValue()){
@@ -155,8 +159,10 @@ public class StateTransferWriter {
                 status.setSegmentStateTransferState(FAILED);
                 return status;
             });
-
+            // If the unrecoverable error occurs -> short circuit the transfer.
+            throw transferResult.getError();
         }
+        return null;
     }
 
     private CompletableFuture<Result<Long, StateTransferException>> handlePossibleTransferFailures

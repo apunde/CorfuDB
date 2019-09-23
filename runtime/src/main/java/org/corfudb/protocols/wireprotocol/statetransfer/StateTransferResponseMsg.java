@@ -2,11 +2,13 @@ package org.corfudb.protocols.wireprotocol.statetransfer;
 
 import io.netty.buffer.ByteBuf;
 import lombok.Getter;
+import lombok.Setter;
 import org.corfudb.protocols.wireprotocol.ICorfuPayload;
 
 public class StateTransferResponseMsg implements ICorfuPayload<StateTransferResponseMsg> {
 
     @Getter
+    @Setter
     private final Response response;
 
     public StateTransferResponseMsg(Response response){

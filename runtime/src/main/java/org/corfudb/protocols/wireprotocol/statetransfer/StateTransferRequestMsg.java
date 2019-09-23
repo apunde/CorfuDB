@@ -7,9 +7,9 @@ import org.corfudb.protocols.wireprotocol.ICorfuPayload;
 public class StateTransferRequestMsg implements ICorfuPayload<StateTransferRequestMsg> {
 
     @Getter
-    private final Request request;
+    private final StateTransferBaseRequest request;
 
-    public StateTransferRequestMsg(Request request){
+    public StateTransferRequestMsg(StateTransferBaseRequest request){
         this.request = request;
     }
 

@@ -21,7 +21,7 @@ public enum StateTransferRequestType {
     private final int requestType;
 
     @Getter
-    private final Function<byte [], Request> mapping;
+    private final Function<byte [], StateTransferBaseRequest> mapping;
 
 
     static final Map<Integer, StateTransferRequestType> typeMap =

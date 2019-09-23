@@ -12,7 +12,9 @@ import java.util.stream.Collectors;
 public enum StateTransferResponseType {
 
     TRANSFER_STARTED(0, StateTransferStartedResponse::new),
-    TRANSFER_IN_PROGRESS(1, StateTransferInProgressResponse::new);
+    TRANSFER_IN_PROGRESS(1, StateTransferInProgressResponse::new),
+    TRANSFER_FINISHED(2, StateTransferFinishedResponse::new),
+    TRANSFER_FAILED(3, StateTransferFailedResponse::new);
 
     @Getter
     private final int responseType;
