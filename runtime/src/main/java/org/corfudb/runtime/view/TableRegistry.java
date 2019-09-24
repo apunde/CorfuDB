@@ -1,16 +1,15 @@
 package org.corfudb.runtime.view;
 
 import com.google.common.reflect.TypeToken;
-import com.google.protobuf.DescriptorProtos.DescriptorProto;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Message;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collection;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
 import org.corfudb.runtime.CorfuRuntime;
@@ -29,28 +28,61 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 /**
+ * Table Registry manages the table lifecycle.
+ * This is a wrapper over the CorfuTable providing transactional operations and accepts only protobuf messages.
+ * It accepts a primary key - which is a protobuf message.
+ * The value is a CorfuRecord which comprises of 2 fields - Payload and Metadata. These are protobuf messages as well.
+ * The table creation registers the schema used in the table which is further used for serialization. This schema
+ * is also used for offline (without access to client protobuf files) browsing and editing.
+ * <p>
  * Created by zlokhandwala on 2019-08-10.
  */
 public class TableRegistry {
 
+    /**
+     * System Table: To store the table schemas and other options.
+     * This information is used to view and edit table using an offline tool without the dependency on the
+     * application for the schemas.
+     */
     private static final String CORFU_SYSTEM_NAMESPACE = "CorfuSystem";
     private static final String REGISTRY_TABLE_NAME = "RegistryTable";
 
+    /**
+     * Connected runtime instance.
+     */
     private final CorfuRuntime runtime;
 
-    private final Map<String, Class<? extends Message>> classMap;
+    /**
+     * Stores the schemas of the Key, Value and Metadata.
+     * A reference of this map is held by the {@link ProtobufSerializer} to serialize and deserialize the objects.
+     */
+    private final ConcurrentMap<String, Class<? extends Message>> classMap;
 
-    private final Map<String, Table<Message, Message, Message>> tableMap;
+    /**
+     * Cache of tables allowing the user to fetch a table by the namespace and table name without the other options.
+     */
+    private final ConcurrentMap<String, Table<Message, Message, Message>> tableMap;
 
+    /**
+     * Serializer to be used for protobuf messages.
+     */
     private final ISerializer protobufSerializer;
 
+    /**
+     * This {@link CorfuTable} holds the schemas of the key, value and metadata for every table created.
+     */
     private final CorfuTable<TableName, CorfuRecord<TableDescriptors, Message>> registryTable;
+
+    /**
+     * Byte code for the Protobuf Serializer.
+     */
+    private static final byte PROTOBUF_SERIALIZER_CODE = (byte) 25;
 
     public TableRegistry(CorfuRuntime runtime) {
         this.runtime = runtime;
         this.classMap = new ConcurrentHashMap<>();
         this.tableMap = new ConcurrentHashMap<>();
-        this.protobufSerializer = new ProtobufSerializer((byte) 25, classMap);
+        this.protobufSerializer = new ProtobufSerializer(PROTOBUF_SERIALIZER_CODE, classMap);
         Serializers.registerSerializer(this.protobufSerializer);
         this.registryTable = this.runtime.getObjectsView().build()
                 .setTypeToken(new TypeToken<CorfuTable<TableName, CorfuRecord<TableDescriptors, Message>>>() {
@@ -63,25 +95,57 @@ public class TableRegistry {
         addTypeToClassMap(TableName.getDefaultInstance());
         addTypeToClassMap(TableDescriptors.getDefaultInstance());
 
-        registerTable(CORFU_SYSTEM_NAMESPACE,
-                REGISTRY_TABLE_NAME,
-                TableName.getDescriptor().toProto(),
-                TableDescriptors.getDescriptor().toProto());
+        // Register the registry table itself.
+        try {
+            registerTable(CORFU_SYSTEM_NAMESPACE,
+                    REGISTRY_TABLE_NAME,
+                    TableName.class,
+                    TableDescriptors.class,
+                    null);
+        } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    private void registerTable(String namespace,
-                               String tableName,
-                               DescriptorProto keyDescriptor,
-                               DescriptorProto valueDescriptor) {
+    /**
+     * Register a table in the internal Table Registry.
+     *
+     * @param namespace     Namespace of the table to be registered.
+     * @param tableName     Table name of the table to be registered.
+     * @param keyClass      Key class.
+     * @param valueClass    Value class.
+     * @param metadataClass Metadata class.
+     * @param <K>           Type of Key.
+     * @param <V>           Type of Value.
+     * @param <M>           Type of Metadata.
+     * @throws NoSuchMethodException     If this is not a protobuf message.
+     * @throws InvocationTargetException If this is not a protobuf message.
+     * @throws IllegalAccessException    If this is not a protobuf message.
+     */
+    private <K extends Message, V extends Message, M extends Message>
+    void registerTable(@Nonnull String namespace,
+                       @Nonnull String tableName,
+                       @Nonnull Class<K> keyClass,
+                       @Nonnull Class<V> valueClass,
+                       @Nullable Class<M> metadataClass)
+            throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 
         TableName tableNameKey = TableName.newBuilder()
                 .setNamespace(namespace)
                 .setTableName(tableName)
                 .build();
-        TableDescriptors tableDescriptors = TableDescriptors.newBuilder()
-                .setKeyDescriptor(keyDescriptor)
-                .setValueDescriptor(valueDescriptor)
-                .build();
+
+        K defaultKeyMessage = (K) keyClass.getMethod("getDefaultInstance").invoke(null);
+        V defaultValueMessage = (V) valueClass.getMethod("getDefaultInstance").invoke(null);
+
+        TableDescriptors.Builder tableDescriptorsBuilder = TableDescriptors.newBuilder()
+                .setKeyDescriptor(defaultKeyMessage.getDescriptorForType().toProto())
+                .setValueDescriptor(defaultValueMessage.getDescriptorForType().toProto());
+        if (metadataClass != null) {
+            M defaultMetadataMessage = (M) metadataClass.getMethod("getDefaultInstance").invoke(null);
+            tableDescriptorsBuilder.setMetadataDescriptor(defaultMetadataMessage.getDescriptorForType().toProto());
+        }
+        TableDescriptors tableDescriptors = tableDescriptorsBuilder.build();
 
         try {
             this.runtime.getObjectsView().TXBuild().type(TransactionType.OPTIMISTIC).build().begin();
@@ -92,14 +156,34 @@ public class TableRegistry {
         }
     }
 
+    /**
+     * Gets the type Url of the protobuf descriptor. Used to identify the message during serialization.
+     * Note: This is same as used in Any.proto.
+     *
+     * @param descriptor Descriptor of the protobuf.
+     * @return Type url string.
+     */
     private String getTypeUrl(Descriptor descriptor) {
         return "type.googleapis.com/" + descriptor.getFullName();
     }
 
+    /**
+     * Fully qualified table name created to produce the stream uuid.
+     *
+     * @param namespace Namespace of the table.
+     * @param tableName Table name of the table.
+     * @return Fully qualified table name.
+     */
     private String getFullyQualifiedTableName(String namespace, String tableName) {
         return namespace + "$" + tableName;
     }
 
+    /**
+     * Adds the schema to the class map to enable serialization of this table data.
+     *
+     * @param msg Default message of this protobuf message.
+     * @param <T> Type of message.
+     */
     private <T extends Message> void addTypeToClassMap(T msg) {
         String typeUrl = getTypeUrl(msg.getDescriptorForType());
         // Register the schemas to schema table.
@@ -108,6 +192,23 @@ public class TableRegistry {
         }
     }
 
+    /**
+     * Opens a Corfu table with the specified options.
+     *
+     * @param namespace    Namespace of the table.
+     * @param tableName    Name of the table.
+     * @param kClass       Key class.
+     * @param vClass       Value class.
+     * @param mClass       Metadata class.
+     * @param tableOptions Table options.
+     * @param <K>          Key type.
+     * @param <V>          Value type.
+     * @param <M>          Metadata type.
+     * @return Table instance.
+     * @throws NoSuchMethodException     If this is not a protobuf message.
+     * @throws InvocationTargetException If this is not a protobuf message.
+     * @throws IllegalAccessException    If this is not a protobuf message.
+     */
     public <K extends Message, V extends Message, M extends Message>
     Table<K, V, M> openTable(@Nonnull final String namespace,
                              @Nonnull final String tableName,
@@ -141,13 +242,22 @@ public class TableRegistry {
                 this.runtime,
                 this.protobufSerializer);
         tableMap.put(fullyQualifiedTableName, (Table<Message, Message, Message>) table);
-        registerTable(namespace,
-                tableName,
-                defaultKeyMessage.getDescriptorForType().toProto(),
-                defaultValueMessage.getDescriptorForType().toProto());
+
+        registerTable(namespace, tableName, kClass, vClass, mClass);
         return table;
     }
 
+    /**
+     * Get an already opened table. Fetches the table from the cache given only the namespace and table name.
+     * Throws a NoSuchElementException if table is not previously opened and not present in cache.
+     *
+     * @param namespace Namespace of the table.
+     * @param tableName Name of the table.
+     * @param <K>       Key type.
+     * @param <V>       Value type.
+     * @param <M>       Metadata type.
+     * @return Table instance.
+     */
     public <K extends Message, V extends Message, M extends Message>
     Table<K, V, M> getTable(String namespace, String tableName) {
         String fullyQualifiedTableName = getFullyQualifiedTableName(namespace, tableName);
@@ -158,13 +268,39 @@ public class TableRegistry {
         return (Table<K, V, M>) tableMap.get(fullyQualifiedTableName);
     }
 
+    /**
+     * Deletes a table.
+     *
+     * @param namespace Namespace of the table.
+     * @param tableName Name of the table.
+     */
     public void deleteTable(String namespace, String tableName) {
     }
 
-    public Collection<TableName> listTables(final String namespace) {
+    /**
+     * Lists all the tables for a namespace.
+     *
+     * @param namespace Namespace for a table.
+     * @return Collection of tables.
+     */
+    public Collection<TableName> listTables(@Nullable final String namespace) {
         return registryTable.keySet()
                 .stream()
                 .filter(tableName -> namespace == null || tableName.getNamespace().equals(namespace))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Gets the table descriptors for a particular table name.
+     * This is used for reconstructing a message when the schema is not available.
+     *
+     * @param tableName Namespace and name of the table.
+     * @return Table Descriptor.
+     */
+    @Nullable
+    public TableDescriptors getTableDescriptor(@Nonnull TableName tableName) {
+        return Optional.ofNullable(this.registryTable.get(tableName))
+                .map(CorfuRecord::getPayload)
+                .orElse(null);
     }
 }

@@ -1,12 +1,12 @@
 package org.corfudb.runtime.collections;
 
-import com.google.common.reflect.TypeToken;
 import com.google.protobuf.Message;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -21,6 +21,10 @@ import org.corfudb.util.serializer.ISerializer;
 import lombok.Getter;
 
 /**
+ * Wrapper over the CorfuTable.
+ * It accepts a primary key - which is a protobuf message.
+ * The value is a CorfuRecord which comprises of 2 fields - Payload and Metadata. These are protobuf messages as well.
+ * <p>
  * Created by zlokhandwala on 2019-08-05.
  */
 public class Table<K extends Message, V extends Message, M extends Message> {
@@ -36,7 +40,7 @@ public class Table<K extends Message, V extends Message, M extends Message> {
     private final String namespace;
 
     /**
-     * Fully qualified table name: created by the namespace and the tablename.
+     * Fully qualified table name: created by the namespace and the table name.
      */
     @Getter
     private final String fullyQualifiedTableName;
@@ -64,17 +68,15 @@ public class Table<K extends Message, V extends Message, M extends Message> {
         this.corfuRuntime = corfuRuntime;
         this.namespace = namespace;
         this.fullyQualifiedTableName = fullyQualifiedTableName;
-        if (metadataSchema != null) {
-            this.metadataOptions = MetadataOptions.builder()
-                    .metadataEnabled(true)
-                    .defaultMetadataInstance(metadataSchema)
-                    .build();
-        } else {
-            this.metadataOptions = MetadataOptions.<M>builder().build();
-        }
+        this.metadataOptions = Optional.ofNullable(metadataSchema)
+                .map(schema -> MetadataOptions.builder()
+                        .metadataEnabled(true)
+                        .defaultMetadataInstance(schema)
+                        .build())
+                .orElse(MetadataOptions.builder().build());
+
         this.corfuTable = corfuRuntime.getObjectsView().build()
-                .setTypeToken(new TypeToken<CorfuTable<K, CorfuRecord<V, M>>>() {
-                })
+                .setTypeToken(CorfuTable.<K, CorfuRecord<V, M>>getTableType())
                 .setStreamName(this.fullyQualifiedTableName)
                 .setSerializer(serializer)
                 .setArguments(new ProtobufIndexer(valueSchema))
@@ -82,17 +84,28 @@ public class Table<K extends Message, V extends Message, M extends Message> {
     }
 
     /**
+     * Returns the underlying CorfuTable object.
+     * NOTE: For internal use only.
+     *
+     * @return CorfuTable instance.
+     */
+    public CorfuTable<K, CorfuRecord<V, M>> getUnderlyingObject() {
+        return corfuTable;
+    }
+
+    /**
      * Begins a write after write transaction.
      */
     private boolean TxBegin() {
-        if (!TransactionalContext.isInTransaction()) {
-            corfuRuntime.getObjectsView()
-                    .TXBuild()
-                    .type(TransactionType.OPTIMISTIC)
-                    .build().begin();
-            return true;
+        if (TransactionalContext.isInTransaction()) {
+            return false;
         }
-        return false;
+        corfuRuntime.getObjectsView()
+                .TXBuild()
+                .type(TransactionType.OPTIMISTIC)
+                .build()
+                .begin();
+        return true;
     }
 
     /**
