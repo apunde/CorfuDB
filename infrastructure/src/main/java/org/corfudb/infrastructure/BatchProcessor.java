@@ -1,10 +1,13 @@
 package org.corfudb.infrastructure;
 
+import com.codahale.metrics.Timer;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -26,10 +29,11 @@ import org.corfudb.protocols.wireprotocol.TailsRequest;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
-import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.QuotaExceededException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterruptedError;
+import org.corfudb.util.CorfuComponent;
+import org.corfudb.util.MetricsUtils;
 
 /**
  * This class manages access for operations that need ordering while executing against
@@ -60,6 +64,8 @@ public class BatchProcessor implements AutoCloseable {
      */
     private long sealEpoch;
 
+    private final Map<Type, String> timerNameCache = new HashMap<Type, String>();
+
     /**
      * Returns a new BatchProcessor for a stream log.
      *
@@ -75,6 +81,7 @@ public class BatchProcessor implements AutoCloseable {
         this.streamLog = streamLog;
         operationsQueue = new LinkedBlockingQueue<>();
         processorService.submit(this::processor);
+        setUpTimerNameCache();
     }
 
     /**
@@ -150,7 +157,8 @@ public class BatchProcessor implements AutoCloseable {
                     processed++;
                     lastOp = currOp;
                 } else {
-                    try {
+                    final Timer timer = getTimer(currOp.getType());
+                    try (Timer.Context context = MetricsUtils.getConditionalContext(timer)){
                         switch (currOp.getType()) {
                             case PREFIX_TRIM:
                                 TrimRequest prefixTrim = (TrimRequest) currOp.getMsg().getPayload();
@@ -240,4 +248,27 @@ public class BatchProcessor implements AutoCloseable {
         processorService.awaitTermination(ServerContext.SHUTDOWN_TIMER.toMillis(), TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Return a timer based on the type of operation. It will take the name from the cache
+     * initialized at construction of the batch processor to avoid String concatenation.
+     *
+     * @param opType type of a {@link BatchWriterOperation} instance
+     * @return an instance {@link Timer} corresponding to the provided {@param opType}
+     */
+    private Timer getTimer(Type opType) {
+        final String timerName = timerNameCache.getOrDefault(opType, CorfuComponent.INFRA_STREAM_OPS + "unknown");
+        return ServerContext.getMetrics().timer(timerName);
+    }
+
+    /**
+     * Initialized the HashMap with the name of timers for different types of operations
+     */
+    private void setUpTimerNameCache() {
+        timerNameCache.put(Type.PREFIX_TRIM, CorfuComponent.INFRA_STREAM_OPS + "prefix-trim");
+        timerNameCache.put(Type.WRITE, CorfuComponent.INFRA_STREAM_OPS + "write");
+        timerNameCache.put(Type.RANGE_WRITE, CorfuComponent.INFRA_STREAM_OPS + "range-write");
+        timerNameCache.put(Type.RESET, CorfuComponent.INFRA_STREAM_OPS + "reset");
+        timerNameCache.put(Type.TAILS_QUERY, CorfuComponent.INFRA_STREAM_OPS + "tails-query");
+        timerNameCache.put(Type.LOG_ADDRESS_SPACE_QUERY, CorfuComponent.INFRA_STREAM_OPS + "log-address-space-query");
+    }
 }

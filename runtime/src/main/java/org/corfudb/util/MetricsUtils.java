@@ -388,4 +388,10 @@ public class MetricsUtils {
             // Re-registering metrics during test runs, not a problem
         }
     }
+
+    public static void addConditionalCacheMeasurer(@NonNull MetricRegistry metrics, Cache cache) {
+        if (metricsCollectionEnabled) {
+            addCacheMeasurerFor(metrics, cache);
+        }
+    }
 }

@@ -9,6 +9,7 @@ import org.corfudb.infrastructure.LogUnitServer.LogUnitServerConfig;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
+import org.corfudb.util.MetricsUtils;
 
 /**
  * LogUnit server cache.
@@ -31,6 +32,7 @@ public class LogUnitServerCache {
                 .maximumWeight(config.getMaxCacheSize())
                 .removalListener(this::handleEviction)
                 .build(this::handleRetrieval);
+        MetricsUtils.addConditionalCacheMeasurer(ServerContext.getMetrics(), dataCache);
     }
 
     /**
