@@ -23,7 +23,6 @@ public enum StateTransferRequestType {
     @Getter
     private final Function<byte [], StateTransferBaseRequest> mapping;
 
-
     static final Map<Integer, StateTransferRequestType> typeMap =
             Arrays.stream(StateTransferRequestType.values())
                     .collect(Collectors.toMap(StateTransferRequestType::getRequestType, Function.identity()));

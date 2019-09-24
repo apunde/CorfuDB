@@ -1,9 +1,9 @@
 package org.corfudb.protocols.wireprotocol.statetransfer;
 
-import static org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestType.INIT_TRANSFER;
+import static org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestType.POLL_TRANSFER;
 
 public class PollTransferRequest extends StateTransferBaseRequest  {
-    PollTransferRequest(long addressStart, long addressEnd){
+    public PollTransferRequest(long addressStart, long addressEnd){
         super(addressStart, addressEnd);
     }
 
@@ -12,7 +12,7 @@ public class PollTransferRequest extends StateTransferBaseRequest  {
     }
 
     @Override
-    StateTransferRequestType getRequestType() {
-        return INIT_TRANSFER;
+    public StateTransferRequestType getRequestType() {
+        return POLL_TRANSFER;
     }
 }

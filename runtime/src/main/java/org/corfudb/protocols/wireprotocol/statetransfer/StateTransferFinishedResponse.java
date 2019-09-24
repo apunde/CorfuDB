@@ -1,13 +1,13 @@
 package org.corfudb.protocols.wireprotocol.statetransfer;
 
-public class StateTransferFinishedResponse implements Response {
+public class StateTransferFinishedResponse extends StateTransferBaseResponse {
 
-    public StateTransferFinishedResponse(){
-
+    public StateTransferFinishedResponse(long startAddress, long endAddress){
+        super(startAddress, endAddress);
     }
 
     StateTransferFinishedResponse(byte [] buf){
-
+        super(buf);
     }
 
     @Override
@@ -15,8 +15,4 @@ public class StateTransferFinishedResponse implements Response {
         return StateTransferResponseType.TRANSFER_FINISHED;
     }
 
-    @Override
-    public byte[] getSerialized() {
-        return new byte[0];
-    }
 }

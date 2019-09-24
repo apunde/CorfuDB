@@ -31,7 +31,9 @@ import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.protocols.wireprotocol.statetransfer.InitTransferRequest;
+import org.corfudb.protocols.wireprotocol.statetransfer.PollTransferRequest;
 import org.corfudb.protocols.wireprotocol.statetransfer.Response;
+import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferBaseResponse;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferStartedResponse;
 import org.corfudb.runtime.CorfuRuntime;
@@ -304,8 +306,17 @@ public class LogUnitClient extends AbstractClient {
      * @param endAddress    The last address of state transfer.
      * @return  A completable future of StateTransferStartedResponse.
      */
-    public CompletableFuture<Response> initializeStateTransfer(long startAddress, long endAddress){
-        StateTransferRequestMsg stateTransferRequestMsg = new StateTransferRequestMsg(new InitTransferRequest(startAddress, endAddress));
-        return sendMessageWithFuture(CorfuMsgType.STATE_TRANSFER_REQUEST.payloadMsg(stateTransferRequestMsg));
+    public CompletableFuture<StateTransferBaseResponse> initializeStateTransfer(long startAddress, long endAddress){
+        StateTransferRequestMsg stateTransferRequestMsg =
+                new StateTransferRequestMsg(new InitTransferRequest(startAddress, endAddress));
+        return sendMessageWithFuture(CorfuMsgType.STATE_TRANSFER_REQUEST
+                .payloadMsg(stateTransferRequestMsg));
+    }
+
+    public CompletableFuture<StateTransferBaseResponse> pollStateTransfer(long startAddress, long endAddress){
+        StateTransferRequestMsg stateTransferRequestMsg =
+                new StateTransferRequestMsg(new PollTransferRequest(startAddress, endAddress));
+        return sendMessageWithFuture(CorfuMsgType.STATE_TRANSFER_REQUEST
+                .payloadMsg(stateTransferRequestMsg));
     }
 }

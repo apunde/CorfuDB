@@ -5,7 +5,7 @@ import static org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequ
 
 public class InitTransferRequest extends StateTransferBaseRequest{
 
-    InitTransferRequest(long addressStart, long addressEnd){
+    public InitTransferRequest(long addressStart, long addressEnd){
         super(addressStart, addressEnd);
     }
 
@@ -14,7 +14,7 @@ public class InitTransferRequest extends StateTransferBaseRequest{
     }
 
     @Override
-    StateTransferRequestType getRequestType() {
+    public StateTransferRequestType getRequestType() {
         return INIT_TRANSFER;
     }
 }
