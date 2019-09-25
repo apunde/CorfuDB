@@ -16,6 +16,7 @@ import org.corfudb.infrastructure.management.FailureDetector;
 import org.corfudb.infrastructure.management.PollReport;
 import org.corfudb.infrastructure.management.ReconfigurationEventHandler;
 import org.corfudb.infrastructure.management.failuredetector.ClusterGraph;
+import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.protocols.wireprotocol.ClusterState;
 import org.corfudb.protocols.wireprotocol.NodeState;
 import org.corfudb.protocols.wireprotocol.SequencerMetrics;
@@ -430,6 +431,7 @@ public class RemoteMonitoringService implements MonitoringService {
             log.debug("Merge segments task already in progress. Skipping spawning another task.");
             return DetectorTask.SKIPPED;
         }
+
 
         log.debug("Number of segments present: {}. Spawning task to merge segments.", segmentsCount);
 
