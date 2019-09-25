@@ -55,6 +55,7 @@ import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.
 @Builder
 public class StateTransferWriter {
 
+    // Get from config
     private static final int SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT = 60;
     private static final int MAX_RETRIES = 3;
     private static final int MAX_WRITE_MILLISECONDS_TIMEOUT = 1000;

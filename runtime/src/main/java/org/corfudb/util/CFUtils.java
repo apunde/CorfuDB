@@ -169,31 +169,22 @@ public final class CFUtils {
      * Schedule the future to execute with a delay.
      *
      * @param executor ScheduledExecutorService instance to schedule a task.
-     * @param command  A future that represents an executable task.
+     * @param command  A supplier of future that represents an executable task.
      * @param delay Delay before the task is executed.
      * @param unit  The units of the delay.
      * @param <T> A return type of the future.
      * @return A completable future, which completes after the delay units.
      */
-    public static <T> CompletableFuture<T> schedule(
+    public static <T> CompletableFuture<T> delayFuture(
             ScheduledExecutorService executor,
-            CompletableFuture<T> command,
+            Supplier<CompletableFuture<T>> command,
             long delay,
             TimeUnit unit
     ) {
-        CompletableFuture<T> completableFuture = new CompletableFuture<>();
-        executor.schedule(
-                (() -> {
-                    try {
-                        return completableFuture.complete(command.get());
-                    } catch (Throwable t) {
-                        return completableFuture.completeExceptionally(t);
-                    }
-                }),
-                delay,
-                unit
-        );
-        return completableFuture;
+
+        CompletableFuture<T> future = new CompletableFuture<>();
+        executor.schedule(() -> future.complete(command.get().join()), delay, unit);
+        return future;
     }
 
     /**

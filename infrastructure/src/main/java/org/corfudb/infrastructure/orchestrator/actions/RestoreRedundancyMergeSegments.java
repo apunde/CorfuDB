@@ -5,15 +5,12 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Ordering;
 import com.google.common.collect.Sets;
 
-import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -25,21 +22,21 @@ import javax.annotation.Nonnull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.orchestrator.Action;
-import org.corfudb.protocols.wireprotocol.statetransfer.Response;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferBaseResponse;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferFailedResponse;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferFinishedResponse;
-import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
-import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferResponseMsg;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferResponseType;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.clients.LogUnitClient;
+import org.corfudb.runtime.exceptions.OutrankedException;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.Layout.LayoutSegment;
 import org.corfudb.runtime.view.Layout.LayoutStripe;
+import org.corfudb.runtime.view.LayoutBuilder;
 import org.corfudb.util.CFUtils;
 
 import static java.util.AbstractMap.*;
@@ -55,12 +52,12 @@ import static org.corfudb.protocols.wireprotocol.statetransfer.StateTransferResp
 @Slf4j
 public class RestoreRedundancyMergeSegments extends Action {
 
-
     public enum SegmentState{
-        FAILED,
         NOT_TRANSFERRED,
         TRANSFERRING,
-        TRANSFERRED
+        TRANSFERRED,
+        RESTORED,
+        FAILED
     }
 
     @AllArgsConstructor
@@ -76,73 +73,84 @@ public class RestoreRedundancyMergeSegments extends Action {
     }
 
 
-    @Builder
+    @AllArgsConstructor
     public static class RedundancyCalculator {
 
         @NonNull
-        private final Layout layout;
-
-        @NonNull
+        @Getter
         private final String server;
 
-        /**
-         * Get the stripes of the last segment for which the node is present.
-         *
-         * @return The stripes of the last segment.
-         */
-        @VisibleForTesting
-        Set<LayoutStripe> getLastSegmentStripes() {
-            List<LayoutStripe> stripesOfLastSegment = layout.getLatestSegment().getStripes();
-            return stripesOfLastSegment
+        public ImmutableMap<Segment, SegmentState> createStateMap(Layout layout){
+            return ImmutableMap.copyOf(layout.getSegments().stream().map(segment -> {
+                Segment statusSegment = new Segment(segment.getStart(), segment.getEnd());
+
+                if (segmentContainsServer(segment)) {
+                    return new SimpleEntry<>(statusSegment, RESTORED);
+                } else {
+                    return new SimpleEntry<>(statusSegment, NOT_TRANSFERRED);
+                }
+            }).collect(Collectors.toMap(SimpleEntry::getKey, SimpleEntry::getValue)));
+        }
+
+        private boolean segmentContainsServer(LayoutSegment segment){
+            // Because we restore the node to the first stripe.
+            return segment.getFirstStripe().getLogServers().contains(server);
+        }
+
+        private Layout restoreRedundancyForSegment(Segment mapSegment, Layout layout){
+
+            List<LayoutSegment> segments = layout.getSegments().stream().map(layoutSegment -> {
+                if (layoutSegment.getStart() == mapSegment.segmentStart &&
+                        layoutSegment.getEnd() == mapSegment.segmentEnd) {
+                    List<LayoutStripe> newStripes = layoutSegment.getStripes().stream().map(stripe -> {
+                        List<String> logServers = new ArrayList<>(stripe.getLogServers());
+                        logServers.add(getServer());
+                        return new LayoutStripe(logServers);
+                    }).collect(Collectors.toList());
+
+                    return new LayoutSegment(layoutSegment.getReplicationMode(),
+                            layoutSegment.getStart(), layoutSegment.getEnd(), newStripes);
+                } else {
+                    return new LayoutSegment(layoutSegment.getReplicationMode(),
+                            layoutSegment.getStart(), layoutSegment.getEnd(), layoutSegment.getStripes());
+                }
+            }).collect(Collectors.toList());
+            Layout newLayout = new Layout(layout);
+            newLayout.setSegments(segments);
+            return newLayout;
+        }
+
+        public Layout updateLayoutAfterRedundancyRestoration(List<Segment> segments, Layout initLayout){
+            return segments
                     .stream()
-                    .filter(stripe -> stripe.getLogServers().contains(server))
-                    .collect(Collectors.toSet());
+                    .reduce(initLayout,
+                            (layout, segment) -> restoreRedundancyForSegment(segment, layout),
+                            (oldLayout, newLayout) -> newLayout);
         }
 
         /**
-         *  Get the map from the segments to the set of stripes that do not contain this node.
-         *
-         * @return The map for all segments to the set of stripes.
-         */
-        public Map<LayoutSegment, Set<LayoutStripe>> getMissingStripesForAllSegments() {
-            Set<LayoutStripe> stripesToBeRestored = getLastSegmentStripes();
-
-            return layout.getSegments()
-                    .stream()
-                    .collect(Collectors.toMap(Function.identity(), l -> {
-                        List<LayoutStripe> stripesForThisSegment = l.getStripes();
-                        Set<LayoutStripe> stripesWhereNodeIsPresent = stripesForThisSegment
-                                .stream()
-                                .filter(stripe -> stripe.getLogServers().contains(server))
-                                .collect(Collectors.toSet());
-                        return Sets.difference(stripesToBeRestored, stripesWhereNodeIsPresent);
-
-                    }));
-        }
-
-        public ImmutableMap<Segment, SegmentState> createStatusMap(Map<LayoutSegment, Set<LayoutStripe>> missingStripesMap){
-            Map<Segment, SegmentState> map = missingStripesMap.keySet().stream().map(entryKey -> {
-                Segment segment = new Segment(entryKey.getStart(), entryKey.getEnd());
-                return new SimpleEntry<>(segment, NOT_TRANSFERRED);
-            }).collect(Collectors.toMap(SimpleEntry::getKey, SimpleEntry::getValue));
-            return ImmutableMap.copyOf(map);
-        }
-
-        public ImmutableMap<Segment, SegmentState> updateStatusMap(Map<Segment, SegmentState> map){
-
-        }
-
-        /**
-         * Check that this node is present for all the stripes in all the segments.
+         * Check that the redundancy is restored.
          *
          * @param map The immutable map of segment statuses.
          * @return True if every segment is transferred and false otherwise.
          */
         public boolean redundancyIsRestored(Map<Segment, SegmentState> map){
-            return map.values().stream().allMatch(state -> state.equals(TRANSFERRED));
+            return map.values().stream().allMatch(state -> state.equals(RESTORED));
+        }
+
+        public boolean canMergeSegments(Layout layout){
+            if(layout.getSegments().size() == 1){
+                return false;
+            }
+            else{
+                return Sets.difference(
+                        layout.getSegments().get(1).getAllLogServers(),
+                        layout.getSegments().get(0).getAllLogServers()).isEmpty();
+            }
         }
     }
 
+    @Getter
     private final String currentNode;
 
 
@@ -166,15 +174,15 @@ public class RestoreRedundancyMergeSegments extends Action {
             return logUnitClient.initializeStateTransfer(segment.segmentStart, segment.segmentEnd);
         }
         else if(state.equals(TRANSFERRING)){
-            return CFUtils.schedule(scheduledExecutorService,
-                    logUnitClient.pollStateTransfer(segment.segmentStart, segment.segmentEnd),
+            return CFUtils.delayFuture(scheduledExecutorService,
+                    () -> logUnitClient.pollStateTransfer(segment.segmentStart, segment.segmentEnd),
                     POLL_INTERVAL_DELAY, POLL_INTERVAL_UNIT);
         }
         else if (state.equals(TRANSFERRED)){
             return CompletableFuture.completedFuture
                     (new StateTransferFinishedResponse(segment.segmentStart, segment.segmentEnd));
         }
-        else {
+        else if(state.equals(FAILED)){
             return CompletableFuture.completedFuture
                     (new StateTransferFailedResponse(segment.segmentStart, segment.segmentEnd));
 
@@ -203,6 +211,37 @@ public class RestoreRedundancyMergeSegments extends Action {
         return ImmutableMap.copyOf(newMap);
     }
 
+    private void tryRestoreRedundancyandMergeSegments(Map<Segment, SegmentState> stateMap,
+                                                  CorfuRuntime runtime)
+            throws OutrankedException {
+
+        List<Segment> segmentsThatWereTransferred = stateMap.keySet().stream().filter(segment -> {
+            SegmentState segmentState = stateMap.get(segment);
+            return segmentState.equals(TRANSFERRED);
+        }).collect(Collectors.toList());
+
+        if(!segmentsThatWereTransferred.isEmpty()){
+            runtime.invalidateLayout();
+
+            Layout oldLayout = runtime.getLayoutView().getLayout();
+
+            RedundancyCalculator calculator = new RedundancyCalculator(currentNode);
+
+            Layout newLayout =
+                    calculator.updateLayoutAfterRedundancyRestoration(
+                            segmentsThatWereTransferred, oldLayout);
+
+            if(calculator.canMergeSegments(newLayout)){
+                runtime.getLayoutManagementView().mergeSegments(newLayout);
+            }
+            else{
+                runtime.getLayoutManagementView()
+                        .runLayoutReconfiguration(oldLayout, newLayout, false);
+            }
+
+        }
+    }
+
 
 
     public RestoreRedundancyMergeSegments(String currentNode) {
@@ -224,33 +263,39 @@ public class RestoreRedundancyMergeSegments extends Action {
         // Get layout.
         Layout layout = runtime.getLayoutView().getLayout();
 
-        RedundancyCalculator redundancyCalculator = RedundancyCalculator
-                .builder().layout(layout).build();
+        // Create a helper class to perform state calculations.
+        RedundancyCalculator redundancyCalculator = new RedundancyCalculator(currentNode);
 
-        // Get a map of missing stripes for all segment of this node.
-        Map<LayoutSegment, Set<LayoutStripe>> missingStripesForAllSegments
-                = redundancyCalculator.getMissingStripesForAllSegments();
-
-        // Create a status map for each segment.
-        ImmutableMap<Segment, SegmentState> statusMap =
-                redundancyCalculator.createStatusMap(missingStripesForAllSegments);
+        // Create an initial state map.
+        ImmutableMap<Segment, SegmentState> stateMap = redundancyCalculator.createStateMap(layout);
 
         // While redundancy is not restored for all the segments for this node.
-        while(!redundancyCalculator.redundancyIsRestored(statusMap)){
-
-            // Sort the segments
-            List<Segment> segments = Ordering.natural().sortedCopy(statusMap.keySet().asList());
+        while(!redundancyCalculator.redundancyIsRestored(stateMap)){
 
             // Perform actions for each segment based on their current status.
-            CompletableFuture<List<Response>> responses =
+
+            // make them sorted
+            stateMap.entrySet().stream().map(enty -> {
+                Segment segment = enty.getKey();
+                SegmentState state = enty.getValue();
+            })
+            CompletableFuture<List<StateTransferBaseResponse>> responses =
                     CFUtils.sequence(segments.stream().map(segment -> {
-                SegmentState segmentState = statusMap.get(segment);
+                SegmentState segmentState = finalStateMap.get(segment);
                 return prepareMsg(segment, segmentState, runtime);
             }).collect(Collectors.toList()));
 
+            // Update segment map based on the responses
+            CompletableFuture<ImmutableMap<Segment, SegmentState>> map =
+                    responses.thenApply(this::createStatusMapFromResponses);
+
+            tryRestoreRedundancyandMergeSegments(map.join(), runtime);
 
             runtime.invalidateLayout();
+
             layout = runtime.getLayoutView().getLayout();
+
+            stateMap = redundancyCalculator.createStateMap(layout);
         }
 
     }

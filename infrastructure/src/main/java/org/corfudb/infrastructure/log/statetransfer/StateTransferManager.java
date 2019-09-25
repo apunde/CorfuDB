@@ -132,7 +132,9 @@ public class StateTransferManager {
             StateTransferResponseMsg stateTransferInProgressMsg =
                     new StateTransferResponseMsg(
                             new StateTransferInProgressResponse
-                                    (currentTransferSegmentStatus.getLastTransferredAddress()));
+                                    (currentTransferSegmentStatus.getLastTransferredAddress(),
+                                            segment.getStartAddress(),
+                                            segment.getEndAddress()));
             r.sendResponse(ctx,
                     msg,
                     CorfuMsgType.STATE_TRANSFER_RESPONSE.payloadMsg(stateTransferInProgressMsg));
@@ -141,7 +143,8 @@ public class StateTransferManager {
             currentTransferSegmentStatusMap.remove(segment);
             StateTransferResponseMsg stateTransferFailedMsg =
                     new StateTransferResponseMsg(
-                            new StateTransferFailedResponse());
+                            new StateTransferFailedResponse
+                                    (segment.getStartAddress(), segment.getEndAddress()));
             r.sendResponse(ctx,
                     msg,
                     CorfuMsgType.STATE_TRANSFER_RESPONSE.payloadMsg(stateTransferFailedMsg));
@@ -155,7 +158,7 @@ public class StateTransferManager {
         StateTransferRequestType stateTransferRequestType = stateTransferRequestMsg
                 .getRequest()
                 .getRequestType();
-
+        // SWITCH
         if (stateTransferRequestType == StateTransferRequestType.INIT_TRANSFER) {
             handleInitTransfer(msg, ctx, r);
         } else  {
