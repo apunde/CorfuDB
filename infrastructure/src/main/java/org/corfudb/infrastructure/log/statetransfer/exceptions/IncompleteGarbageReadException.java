@@ -1,4 +1,4 @@
-package org.corfudb.infrastructure.log.statetransfer;
+package org.corfudb.infrastructure.log.statetransfer.exceptions;
 
 import lombok.Getter;
 
@@ -8,7 +8,7 @@ public class IncompleteGarbageReadException extends IncompleteReadException {
     @Getter
     private final String hostAddress;
 
-    IncompleteGarbageReadException(String hostAddress, Set<Long> missingAddresses){
+    public IncompleteGarbageReadException(String hostAddress, Set<Long> missingAddresses){
         super(missingAddresses);
         this.hostAddress = hostAddress;
     }

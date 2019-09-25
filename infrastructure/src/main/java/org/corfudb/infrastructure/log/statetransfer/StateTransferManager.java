@@ -10,12 +10,10 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.IServerRouter;
 import org.corfudb.infrastructure.log.StreamLog;
+import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
 import org.corfudb.protocols.wireprotocol.statetransfer.InitTransferRequest;
-import org.corfudb.protocols.wireprotocol.statetransfer.PollTransferRequest;
-import org.corfudb.protocols.wireprotocol.statetransfer.Response;
-import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferBaseRequest;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferFailedResponse;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferFinishedResponse;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferInProgressResponse;
@@ -27,13 +25,9 @@ import javax.annotation.Nonnull;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
-
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentStateTransferState.TRANSFERRED;
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentStateTransferState.TRANSFERRING;
 
 @Slf4j
 @Builder
@@ -42,24 +36,31 @@ import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.
  */
 public class StateTransferManager {
 
-    public enum SegmentStateTransferState{
+    public enum SegmentState{
+        NOT_TRANSFERRED,
         TRANSFERRING,
         TRANSFERRED,
+        RESTORED,
         FAILED
     }
 
     @AllArgsConstructor
     @EqualsAndHashCode
     @Getter
-    public static class CurrentTransferSegment{
+    public static class CurrentTransferSegment implements Comparable<CurrentTransferSegment>{
         private final long startAddress;
         private final long endAddress;
+
+        @Override
+        public int compareTo(CurrentTransferSegment other) {
+            return (int) (this.startAddress - other.endAddress);
+        }
     }
+
     @AllArgsConstructor
     @Getter
-    @Setter
     public static class CurrentTransferSegmentStatus{
-        private SegmentStateTransferState segmentStateTransferState;
+        private SegmentState segmentStateTransferState;
         private long lastTransferredAddress;
     }
 
@@ -85,6 +86,9 @@ public class StateTransferManager {
                 .boxed()
                 .collect(Collectors.toList());
     }
+
+
+    private void handleTransfer()
 
     private void handleInitTransfer(CorfuPayloadMsg<StateTransferRequestMsg> msg,
                                     ChannelHandlerContext ctx, IServerRouter r){

@@ -33,6 +33,10 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import org.corfudb.common.metrics.providers.DropwizardMetricsProvider;
+import org.corfudb.infrastructure.log.InMemoryStreamLog;
+import org.corfudb.infrastructure.log.StreamLog;
+import org.corfudb.infrastructure.log.StreamLogFiles;
+import org.corfudb.infrastructure.log.StreamLogParams;
 import org.corfudb.protocols.wireprotocol.NettyCorfuMessageDecoder;
 import org.corfudb.protocols.wireprotocol.NettyCorfuMessageEncoder;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
@@ -40,7 +44,10 @@ import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterrupte
 import org.corfudb.security.sasl.plaintext.PlainTextSaslNettyServer;
 import org.corfudb.security.tls.SslContextConstructor;
 import org.corfudb.util.GitRepositoryState;
+import org.corfudb.util.Utils;
 import org.corfudb.util.Version;
+
+import static org.corfudb.infrastructure.LogUnitServer.*;
 
 
 /**
@@ -71,15 +78,37 @@ public class CorfuServerNode implements AutoCloseable {
      * @param metricRegistry Centralized Dropwizard Metric Registry.
      */
     public CorfuServerNode(@Nonnull ServerContext serverContext, MetricRegistry metricRegistry) {
-        this(serverContext,
-                ImmutableMap.<Class, AbstractServer>builder()
-                        .put(BaseServer.class, new BaseServer(serverContext))
-                        .put(SequencerServer.class, new SequencerServer(serverContext, new DropwizardMetricsProvider("corfu-server", metricRegistry)))
-                        .put(LayoutServer.class, new LayoutServer(serverContext))
-                        .put(LogUnitServer.class, new LogUnitServer(serverContext))
-                        .put(ManagementServer.class, new ManagementServer(serverContext))
-                        .build()
-        );
+
+        StreamLog streamLog;
+        LogUnitServerConfig config = LogUnitServerConfig.parse(serverContext.getServerConfig());
+        if (config.isMemoryMode()) {
+            log.warn("Log unit opened in-memory mode (Maximum size={}). "
+                    + "This should be run for testing purposes only. "
+                    + "If you exceed the maximum size of the unit, old entries will be "
+                    + "AUTOMATICALLY trimmed. "
+                    + "The unit WILL LOSE ALL DATA if it exits.", Utils
+                    .convertToByteStringRepresentation(config.getMaxCacheSize()));
+            streamLog = new InMemoryStreamLog();
+        } else {
+            StreamLogParams streamLogParams = serverContext.getStreamLogParams();
+            streamLog = new StreamLogFiles(streamLogParams, serverContext.getStreamLogDataStore());
+            log.info("Log unit server started with stream log parameters: {}", streamLogParams);
+        }
+
+        ImmutableMap<Class, AbstractServer> servers = ImmutableMap.<Class, AbstractServer>builder()
+                .put(BaseServer.class, new BaseServer(serverContext))
+                .put(SequencerServer.class, new SequencerServer(serverContext, new DropwizardMetricsProvider("corfu-server", metricRegistry)))
+                .put(LayoutServer.class, new LayoutServer(serverContext))
+                .put(LogUnitServer.class, new LogUnitServer(serverContext, streamLog))
+                .put(ManagementServer.class, new ManagementServer(serverContext))
+                .build();
+
+        this.serverContext = serverContext;
+        this.serverMap = servers;
+        router = new NettyServerRouter(new ArrayList<>(serverMap.values()));
+        this.serverContext.setServerRouter(router);
+        this.close = new AtomicBoolean(false);
+
     }
 
     /**

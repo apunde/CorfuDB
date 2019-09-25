@@ -6,9 +6,6 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.log.InMemoryStreamLog;
-import org.corfudb.infrastructure.log.statetransfer.StateTransferManager;
-import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.StateTransferState;
-import org.corfudb.infrastructure.log.statetransfer.StateTransferWriter;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.StreamLogFiles;
 import org.corfudb.infrastructure.log.StreamLogParams;
@@ -29,7 +26,6 @@ import org.corfudb.protocols.wireprotocol.TailsRequest;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
-import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferRequestMsg;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.LogUnitException;
@@ -103,7 +99,6 @@ public class LogUnitServer extends AbstractServer {
     private final LogUnitServerCache dataCache;
     private final StreamLog streamLog;
     private final BatchProcessor batchWriter;
-    private final StateTransferManager stateTransferManager;
 
     private ExecutorService executor;
 
@@ -144,11 +139,21 @@ public class LogUnitServer extends AbstractServer {
 
         dataCache = new LogUnitServerCache(config, streamLog);
         batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
-        StateTransferWriter stateTransferWriter = StateTransferWriter.builder()
-                .serverContext(serverContext).streamLog(streamLog).build();
-        stateTransferManager = StateTransferManager.builder()
-                .stateTransferWriter(stateTransferWriter).streamLog(streamLog).build();
 
+
+        if (config.enableCompaction) {
+            streamLog.startCompactor();
+        }
+    }
+
+    public LogUnitServer(ServerContext serverContext, StreamLog streamLog){
+        this.serverContext = serverContext;
+        this.executor = Executors.newFixedThreadPool(serverContext.getLogunitThreadCount(),
+                new ServerThreadFactory("LogUnit-", new ServerThreadFactory.ExceptionHandler()));
+        this.streamLog = streamLog;
+        this.config = LogUnitServerConfig.parse(serverContext.getServerConfig());
+        this.dataCache = new LogUnitServerCache(config, streamLog);
+        this.batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
         if (config.enableCompaction) {
             streamLog.startCompactor();
         }
@@ -356,18 +361,6 @@ public class LogUnitServer extends AbstractServer {
             }
             r.sendResponse(ctx, msg, CorfuMsgType.READ_RESPONSE.payloadMsg(readResponse));
         }
-    }
-
-    /**
-     * Handle state transfer request using a state transfer manager.
-     * @param msg State transfer request message.
-     * @param ctx ChannelHandlerContext.
-     * @param r Server router.
-     */
-    @ServerHandler(type = CorfuMsgType.STATE_TRANSFER_REQUEST)
-    public void handleStateTransfer(CorfuPayloadMsg<StateTransferRequestMsg> msg, ChannelHandlerContext ctx, IServerRouter r) {
-        log.info("handleStateTransfer: {}", msg);
-        stateTransferManager.handleMessage(msg, ctx, r);
     }
 
     /**

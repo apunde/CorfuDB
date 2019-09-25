@@ -1,9 +1,9 @@
-package org.corfudb.infrastructure.log.statetransfer;
+package org.corfudb.infrastructure.log.statetransfer.exceptions;
 
 import java.util.Set;
 
 public class IncompleteDataReadException extends IncompleteReadException {
-    IncompleteDataReadException(Set<Long> missingAddresses) {
+    public IncompleteDataReadException(Set<Long> missingAddresses) {
         super(missingAddresses);
     }
 }

@@ -1,4 +1,4 @@
-package org.corfudb.infrastructure.log.statetransfer;
+package org.corfudb.infrastructure.log.statetransfer.exceptions;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

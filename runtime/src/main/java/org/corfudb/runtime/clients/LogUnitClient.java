@@ -297,26 +297,4 @@ public class LogUnitClient extends AbstractClient {
     public CompletableFuture<Boolean> resetLogUnit(long epoch) {
         return sendMessageWithFuture(CorfuMsgType.RESET_LOGUNIT.payloadMsg(epoch));
     }
-
-    // Below are the messages that are part of the state transfer protocol.
-
-    /**
-     * Initialize state transfer on the current node.
-     * @param startAddress The first address of state transfer.
-     * @param endAddress    The last address of state transfer.
-     * @return  A completable future of StateTransferStartedResponse.
-     */
-    public CompletableFuture<StateTransferBaseResponse> initializeStateTransfer(long startAddress, long endAddress){
-        StateTransferRequestMsg stateTransferRequestMsg =
-                new StateTransferRequestMsg(new InitTransferRequest(startAddress, endAddress));
-        return sendMessageWithFuture(CorfuMsgType.STATE_TRANSFER_REQUEST
-                .payloadMsg(stateTransferRequestMsg));
-    }
-
-    public CompletableFuture<StateTransferBaseResponse> pollStateTransfer(long startAddress, long endAddress){
-        StateTransferRequestMsg stateTransferRequestMsg =
-                new StateTransferRequestMsg(new PollTransferRequest(startAddress, endAddress));
-        return sendMessageWithFuture(CorfuMsgType.STATE_TRANSFER_REQUEST
-                .payloadMsg(stateTransferRequestMsg));
-    }
 }
