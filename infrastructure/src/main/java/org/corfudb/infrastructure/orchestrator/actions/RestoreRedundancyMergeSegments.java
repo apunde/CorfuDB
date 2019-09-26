@@ -8,19 +8,10 @@ import com.google.common.collect.Sets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
-
-import com.sun.org.apache.regexp.internal.RE;
-import edu.umd.cs.findbugs.ba.ComparableField;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -33,13 +24,10 @@ import org.corfudb.infrastructure.log.statetransfer.StateTransferWriter;
 import org.corfudb.infrastructure.log.statetransfer.batch.GCAwareTransferBatchProcessor;
 import org.corfudb.infrastructure.orchestrator.RestoreAction;
 import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.runtime.clients.LogUnitClient;
 import org.corfudb.runtime.exceptions.OutrankedException;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.Layout.LayoutSegment;
 import org.corfudb.runtime.view.Layout.LayoutStripe;
-import org.corfudb.runtime.view.LayoutBuilder;
-import org.corfudb.util.CFUtils;
 
 import static java.util.AbstractMap.*;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.*;
@@ -47,7 +35,6 @@ import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.NOT_TRANSFERRED;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.RESTORED;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.TRANSFERRED;
-import static org.corfudb.protocols.wireprotocol.statetransfer.StateTransferResponseType.*;
 
 /**
  * This action attempts to restore redundancy for all servers across all segments
@@ -167,8 +154,6 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
 
             return ImmutableMap.copyOf(resultMap);
         }
-
-
     }
 
     @Getter

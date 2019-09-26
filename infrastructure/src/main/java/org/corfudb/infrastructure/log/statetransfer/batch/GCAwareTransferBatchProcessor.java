@@ -23,7 +23,6 @@ import org.corfudb.runtime.exceptions.RetryExhaustedException;
 import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
-import org.corfudb.runtime.view.replication.IReplicationProtocol;
 import org.corfudb.util.Sleep;
 import org.corfudb.util.retry.ExponentialBackoffRetry;
 import org.corfudb.util.retry.IRetry;

@@ -4,6 +4,7 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.runtime.CorfuRuntime;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import javax.annotation.Nonnull;
 
@@ -11,7 +12,7 @@ import javax.annotation.Nonnull;
 public abstract class RestoreAction extends Action {
 
     public void impl(@Nonnull CorfuRuntime runtime) throws Exception{
-        // Not used.
+        throw new NotImplementedException();
     }
 
     public abstract void impl(@Nonnull CorfuRuntime runtime, @NonNull StreamLog streamLog) throws Exception;
