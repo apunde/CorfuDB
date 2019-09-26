@@ -140,10 +140,14 @@ public class TableRegistry {
 
         TableDescriptors.Builder tableDescriptorsBuilder = TableDescriptors.newBuilder()
                 .setKeyDescriptor(defaultKeyMessage.getDescriptorForType().toProto())
-                .setValueDescriptor(defaultValueMessage.getDescriptorForType().toProto());
+                .setKeyClass(keyClass.getCanonicalName())
+                .setValueDescriptor(defaultValueMessage.getDescriptorForType().toProto())
+                .setValueClass(valueClass.getCanonicalName());
         if (metadataClass != null) {
             M defaultMetadataMessage = (M) metadataClass.getMethod("getDefaultInstance").invoke(null);
-            tableDescriptorsBuilder.setMetadataDescriptor(defaultMetadataMessage.getDescriptorForType().toProto());
+            tableDescriptorsBuilder
+                    .setMetadataDescriptor(defaultMetadataMessage.getDescriptorForType().toProto())
+                    .setMetadataClass(metadataClass.getCanonicalName());
         }
         TableDescriptors tableDescriptors = tableDescriptorsBuilder.build();
 
