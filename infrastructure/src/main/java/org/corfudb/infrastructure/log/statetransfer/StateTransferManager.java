@@ -44,7 +44,6 @@ public class StateTransferManager {
 
     public enum SegmentState {
         NOT_TRANSFERRED,
-        TRANSFERRING,
         TRANSFERRED,
         RESTORED,
         FAILED
@@ -121,7 +120,7 @@ public class StateTransferManager {
                     else{
                         CompletableFuture<CurrentTransferSegmentStatus> segmentStatusFuture =
                                 stateTransferWriter
-                                        .stateTransfer(unknownAddressesInRange, segment)
+                                        .stateTransfer(unknownAddressesInRange)
                                         .thenApply(r -> {
                                             if (r.isValue() && r.get().equals(segment.getEndAddress())) {
                                                 return new CurrentTransferSegmentStatus(TRANSFERRED, r.get());

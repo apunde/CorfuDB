@@ -11,7 +11,6 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.common.result.Result;
 import org.corfudb.infrastructure.log.StreamLog;
-import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatch;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchProcessor;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.IncompleteDataReadException;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.IncompleteGarbageReadException;
@@ -67,8 +66,7 @@ public class StateTransferWriter {
     private CorfuRuntime corfuRuntime;
 
 
-    public CompletableFuture<Result<Long, StateTransferException>> stateTransfer(List<Long> addresses,
-                                                                                 CurrentTransferSegment segment) {
+    public CompletableFuture<Result<Long, StateTransferException>> stateTransfer(List<Long> addresses) {
         int readSize = corfuRuntime.getParameters().getBulkReadSize();
         RuntimeLayout runtimeLayout = corfuRuntime.getLayoutView().getRuntimeLayout();
         Map<String, List<List<Long>>> serversToBatches =
