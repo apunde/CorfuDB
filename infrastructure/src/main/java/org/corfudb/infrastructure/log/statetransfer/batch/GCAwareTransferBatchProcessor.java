@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Builder
-public class GCAwareTransferBatch implements TransferBatch {
+public class GCAwareTransferBatchProcessor implements TransferBatchProcessor {
 
 
     private static final int MAX_RETRIES = 3;

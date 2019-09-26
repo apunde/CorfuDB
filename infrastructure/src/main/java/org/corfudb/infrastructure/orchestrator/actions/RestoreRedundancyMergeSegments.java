@@ -29,6 +29,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferManager;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferWriter;
+import org.corfudb.infrastructure.log.statetransfer.batch.GCAwareTransferBatch;
+import org.corfudb.infrastructure.log.statetransfer.batch.GCAwareTransferBatchProcessor;
+import org.corfudb.infrastructure.log.statetransfer.exceptions.StateTransferFailure;
 import org.corfudb.infrastructure.orchestrator.Action;
 import org.corfudb.infrastructure.orchestrator.RestoreAction;
 import org.corfudb.protocols.wireprotocol.statetransfer.StateTransferBaseResponse;
@@ -46,8 +49,11 @@ import org.corfudb.util.CFUtils;
 
 import static java.util.AbstractMap.*;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.*;
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.FAILED;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.NOT_TRANSFERRED;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.RESTORED;
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.TRANSFERRED;
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.TRANSFERRING;
 import static org.corfudb.protocols.wireprotocol.statetransfer.StateTransferResponseType.*;
 
 /**
@@ -67,17 +73,22 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
         @Getter
         private final String server;
 
-        public ImmutableMap<CurrentTransferSegment, CurrentTransferSegmentStatus>
+        public ImmutableMap<CurrentTransferSegment, CompletableFuture<CurrentTransferSegmentStatus>>
         createStateMap(Layout layout){
-            Map<CurrentTransferSegment, CurrentTransferSegmentStatus> map = layout.getSegments().stream().map(segment -> {
+            Map<CurrentTransferSegment, CompletableFuture<CurrentTransferSegmentStatus>> map = layout.getSegments().stream().map(segment -> {
                 CurrentTransferSegment statusSegment = new CurrentTransferSegment(segment.getStart(), segment.getEnd());
 
                 if (segmentContainsServer(segment)) {
                     return new SimpleEntry<>(statusSegment,
-                            new CurrentTransferSegmentStatus(RESTORED, segment.getEnd()));
+                            CompletableFuture
+                                    .completedFuture(new
+                                            CurrentTransferSegmentStatus(RESTORED,
+                                            segment.getEnd())));
                 } else {
                     return new SimpleEntry<>(statusSegment,
-                            new CurrentTransferSegmentStatus(NOT_TRANSFERRED, segment.getStart()));
+                            CompletableFuture.completedFuture(new
+                                    CurrentTransferSegmentStatus(NOT_TRANSFERRED,
+                                    segment.getStart())));
                 }
             }).collect(Collectors.toMap(SimpleEntry::getKey, SimpleEntry::getValue));
             return ImmutableMap.copyOf(map);
@@ -124,8 +135,18 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
          * @param map The immutable map of segment statuses.
          * @return True if every segment is transferred and false otherwise.
          */
-        public boolean redundancyIsRestored(Map<CurrentTransferSegment, CurrentTransferSegmentStatus> map){
-            return map.values().stream().allMatch(state -> state.equals(RESTORED));
+        public boolean redundancyIsRestored(Map<CurrentTransferSegment, CompletableFuture<CurrentTransferSegmentStatus>> map){
+            return map.values().stream().allMatch(state -> {
+
+                if(!state.isDone()){
+                    return false;
+                }
+                else{
+                    CurrentTransferSegmentStatus currentTransferSegmentStatus = state.join();
+                    return currentTransferSegmentStatus.getSegmentStateTransferState()
+                            .equals(RESTORED);
+                }
+            });
         }
 
         public static boolean canMergeSegments(Layout layout){
@@ -143,73 +164,43 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
     @Getter
     private final String currentNode;
 
-    // Prepare a message based on the current status of the segment, if possible.
-    private CompletableFuture<Optional<StateTransferBaseResponse>> prepareMsg(CurrentTransferSegment segment,
-                                                                              CurrentTransferSegmentStatus state,
-                                                                              CorfuRuntime runtime){
-        LogUnitClient logUnitClient = runtime
-                .getLayoutView()
-                .getRuntimeLayout()
-                .getLogUnitClient(currentNode);
 
-        if(state.equals(NOT_TRANSFERRED)){
-            return logUnitClient.initializeStateTransfer(segment.segmentStart, segment.segmentEnd)
-                    .thenApply(Optional::of);
-        }
-        else if(state.equals(TRANSFERRING)){
-            return CFUtils.delayFuture(scheduledExecutorService,
-                    () -> logUnitClient.pollStateTransfer(segment.segmentStart, segment.segmentEnd),
-                    POLL_INTERVAL_DELAY, POLL_INTERVAL_UNIT).thenApply(Optional::of);
-        }
-        else {
-            return CompletableFuture.completedFuture(Optional.empty());
-        }
-    }
 
-    // Create status map based on the responses
-    private ImmutableMap<Segment, SegmentState> createStatusMapFromResponses(List<StateTransferBaseResponse> responses) {
-        Map<Segment, SegmentState> newMap = responses.stream().map(response -> {
-            StateTransferResponseType responseType = response.getResponseType();
-            long addressStart = response.getAddressStart();
-            long addressEnd = response.getAddressEnd();
-            Segment segment = new Segment(addressStart, addressEnd);
-
-            if (responseType.equals(TRANSFER_STARTED) || responseType.equals(TRANSFER_IN_PROGRESS)) {
-                return new SimpleEntry<>(segment, TRANSFERRING);
-            }
-
-            else if (responseType.equals(TRANSFER_FAILED)) {
-                return new SimpleEntry<>(segment, FAILED);
-            }
-            else {
-                return new SimpleEntry<>(segment, TRANSFERRED);
-            }
-        }).collect(Collectors.toMap(SimpleEntry::getKey, SimpleEntry::getValue));
-        return ImmutableMap.copyOf(newMap);
-    }
 
     // If this function fails, then the workflow is retried.
-    private void tryRestoreRedundancyAndMergeSegments(Map<Segment, SegmentState> stateMap,
+    private void tryRestoreRedundancyAndMergeSegments(Map<CurrentTransferSegment, CompletableFuture<CurrentTransferSegmentStatus>> stateMap,
                                                   CorfuRuntime runtime)
             throws OutrankedException {
 
-        List<Entry<Segment, SegmentState>> failedSegments =
-                stateMap.entrySet()
+        // Need to be synchronous here.
+        List<Entry<CurrentTransferSegment, CurrentTransferSegmentStatus>> completedEntries
+                = stateMap.entrySet().stream().filter(entry -> {
+            CompletableFuture<CurrentTransferSegmentStatus> status = entry.getValue();
+            return status.isDone();
+        }).map(entry -> new SimpleEntry<>(entry.getKey(), entry.getValue()
+                .join()))
+                .collect(Collectors.toList());
+        
+        // If any failed segments exist -> fail. 
+        List<Entry<CurrentTransferSegment, CurrentTransferSegmentStatus>> failedEntries =
+                completedEntries
                         .stream()
-                        .filter(entry -> entry.getValue()
+                        .filter(entry -> entry.getValue().getSegmentStateTransferState()
                                 .equals(FAILED))
                         .collect(Collectors.toList());
 
-        if(!failedSegments.isEmpty()){
+        if(!failedEntries.isEmpty()){
             throw new IllegalStateException("Transfer failed for one or more segments.");
         }
+        
+        // Filter all the segments that have been transferred.
+        List<CurrentTransferSegment> transferredSegments = completedEntries
+                .stream()
+                .filter(entry -> entry.getValue().getSegmentStateTransferState()
+                        .equals(TRANSFERRED)).map(entry -> entry.getKey())
+                .collect(Collectors.toList());
 
-        List<Segment> segmentsThatWereTransferred = stateMap.keySet().stream().filter(segment -> {
-            SegmentState segmentState = stateMap.get(segment);
-            return segmentState.equals(TRANSFERRED);
-        }).collect(Collectors.toList());
-
-        if(!segmentsThatWereTransferred.isEmpty()){
+        if(!transferredSegments.isEmpty()){
             runtime.invalidateLayout();
 
             Layout oldLayout = runtime.getLayoutView().getLayout();
@@ -218,7 +209,7 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
 
             Layout newLayout =
                     calculator.updateLayoutAfterRedundancyRestoration(
-                            segmentsThatWereTransferred, oldLayout);
+                            transferredSegments, oldLayout);
 
             if(RedundancyCalculator.canMergeSegments(newLayout)){
                 runtime.getLayoutManagementView().mergeSegments(newLayout);
@@ -243,6 +234,26 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
         return "RestoreRedundancyAndMergeSegments";
     }
 
+    public ImmutableMap<CurrentTransferSegment, CompletableFuture<CurrentTransferSegmentStatus>> updateMap
+            (Map<CurrentTransferSegment, CompletableFuture<CurrentTransferSegmentStatus>> stateMap,
+             StateTransferManager manager){
+
+        Map<CurrentTransferSegment, CompletableFuture<CurrentTransferSegmentStatus>> newStateMap =
+                manager.handleTransfer(stateMap).stream().map(entry -> {
+            CurrentTransferSegment currentTransferSegment = entry.getKey();
+            CompletableFuture<CurrentTransferSegmentStatus> futureSegmentStatus = entry.getValue();
+            if (futureSegmentStatus.isCompletedExceptionally()) {
+                return new SimpleEntry<>
+                        (currentTransferSegment, CompletableFuture.completedFuture(new CurrentTransferSegmentStatus(FAILED,
+                                -1L)));
+            } else {
+                return new SimpleEntry<>(currentTransferSegment, futureSegmentStatus);
+            }
+        }).collect(Collectors.toMap(SimpleEntry::getKey, SimpleEntry::getValue));
+
+        return ImmutableMap.copyOf(newStateMap);
+    }
+
     @Override
     public void impl(@Nonnull CorfuRuntime runtime, @NonNull StreamLog streamLog) throws Exception {
 
@@ -252,39 +263,32 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
         // Get layout.
         Layout layout = runtime.getLayoutView().getLayout();
 
-
         // Create a helper class to perform state calculations.
         RedundancyCalculator redundancyCalculator = new RedundancyCalculator(currentNode);
 
+        // Create a state transfer manager -> should be configurable
+        GCAwareTransferBatchProcessor batchProcessor =
+                GCAwareTransferBatchProcessor.builder().streamLog(streamLog).build();
+
+        StateTransferWriter transferWriter = StateTransferWriter.builder()
+                .batchProcessor(batchProcessor).build();
+
+        StateTransferManager transferManager =
+                builder().stateTransferWriter(transferWriter).streamLog(streamLog).build();
+
         // Create an initial state map.
-        ImmutableMap<Segment, SegmentState> stateMap = redundancyCalculator.createStateMap(layout);
+        ImmutableMap<CurrentTransferSegment, CompletableFuture<CurrentTransferSegmentStatus>> stateMap =
+                redundancyCalculator.createStateMap(layout);
 
         // While redundancy is not restored for all the segments for this node.
         while(!redundancyCalculator.redundancyIsRestored(stateMap)){
 
-            // Perform actions for each segment based on their current status, if possible.
-            // Filter responses that don't exist.
-            CompletableFuture<List<StateTransferBaseResponse>> responses =
-                    CFUtils.sequence(stateMap.entrySet()
-                    .stream()
-                    .sorted(Entry.comparingByKey())
-                    .map(entry -> {
-                        Segment segment = entry.getKey();
-                        SegmentState state = entry.getValue();
-                        return prepareMsg(segment, state, runtime);
-                    }).collect(Collectors.toList()))
-                    .thenApply(list -> list.stream()
-                            .filter(Optional::isPresent)
-                            .map(Optional::get).collect(Collectors.toList()));
-
-            // Update segment state map based on the responses from the log unit server.
-            CompletableFuture<ImmutableMap<Segment, SegmentState>> map =
-                    responses.thenApply(this::createStatusMapFromResponses);
+            stateMap = updateMap(stateMap, transferManager);
 
 
             // Try restore redundancy for the segments that are restored.
             // If possible, also merge segments.
-            tryRestoreRedundancyAndMergeSegments(map.join(), runtime);
+            tryRestoreRedundancyAndMergeSegments(stateMap, runtime);
 
             runtime.invalidateLayout();
 

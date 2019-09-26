@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.corfudb.common.result.Result;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatch;
+import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchProcessor;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.IncompleteDataReadException;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.IncompleteGarbageReadException;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.IncompleteReadException;
@@ -49,8 +50,6 @@ import java.util.stream.Collectors;
 
 import static java.util.Map.*;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.*;
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentStateTransferState.FAILED;
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentStateTransferState.TRANSFERRED;
 
 /**
  * This class is responsible for reading from the remote log units and writing to the local log.
@@ -61,66 +60,65 @@ public class StateTransferWriter {
 
     @Getter
     @NonNull
-    private TransferBatch transferBatch;
+    private TransferBatchProcessor batchProcessor;
 
     @Getter
     @NonNull
     private CorfuRuntime corfuRuntime;
 
-    public void stateTransfer(List<Long> addresses,
-                              CurrentTransferSegment segment,
-                              Map<CurrentTransferSegment,
-                                      CurrentTransferSegmentStatus> statusMap) {
+
+    public CompletableFuture<Result<Long, StateTransferException>> stateTransfer(List<Long> addresses,
+                                                                                 CurrentTransferSegment segment) {
         int readSize = corfuRuntime.getParameters().getBulkReadSize();
         RuntimeLayout runtimeLayout = corfuRuntime.getLayoutView().getRuntimeLayout();
         Map<String, List<List<Long>>> serversToBatches =
                 mapServersToBatches(addresses, readSize, runtimeLayout);
 
-        CFUtils.sequence(serversToBatches.entrySet().stream().map(entry -> {
-            // Process every batch, handling errors if any, updating state,
+        List<CompletableFuture<Result<Long, StateTransferException>>> allListOfFutureResults =
+                serversToBatches.entrySet().stream().map(entry -> {
+            // Process every batch, handling errors if any,
             // propagating to the caller if the timeout occurs,
             // the retries are exhausted, or unexpected error happened.
             String server = entry.getKey();
             List<List<Long>> batches = entry.getValue();
-            List<CompletableFuture<Void>> batchTransferResult = batches.stream().map(batch ->
-                    transferBatch.transfer(batch, server, runtimeLayout)
-                    .thenCompose(transferResult ->
-                            transferBatch.handlePossibleTransferFailures(
-                                    transferResult,
-                                    runtimeLayout,
-                                    new AtomicInteger()))
-                    .thenCompose(transferResult ->
-                            updateSegmentState(transferResult, segment, statusMap)))
-                    .collect(Collectors.toList());
-            return CFUtils.sequence(batchTransferResult);
-        }).collect(Collectors.toList())).join();
+            List<CompletableFuture<Result<Long, StateTransferException>>> listOfFutureResults
+                    = batches.stream().map(batch ->
+                    batchProcessor.transfer(batch, server, runtimeLayout)
+                            .thenCompose(transferResult ->
+                                    batchProcessor.handlePossibleTransferFailures(
+                                            transferResult,
+                                            runtimeLayout,
+                                            new AtomicInteger()))
+            ).collect(Collectors.toList());
+
+            return coalesceResults(listOfFutureResults);
+        }).collect(Collectors.toList());
+
+
+        return coalesceResults(allListOfFutureResults);
+    }
+
+    private static CompletableFuture<Result<Long, StateTransferException>> coalesceResults
+            (List<CompletableFuture<Result<Long, StateTransferException>>> allResults) {
+        CompletableFuture<List<Result<Long, StateTransferException>>> futureOfListResults =
+                CFUtils.sequence(allResults);
+
+        CompletableFuture<Optional<Result<Long, StateTransferException>>> possibleSingleResult = futureOfListResults
+                .thenApply(multipleResults ->
+                        multipleResults
+                                .stream()
+                                .reduce(StateTransferWriter::mergeBatchResults));
+
+        return possibleSingleResult.thenApply(result -> result.orElseGet(() ->
+                new Result<>(-1L, new StateTransferFailure("Coalesced transfer batch result is empty."))));
 
     }
 
-    private CompletableFuture<Void> updateSegmentState(
-            Result<Long, StateTransferException> transferResult, CurrentTransferSegment segment,
-            Map<CurrentTransferSegment, CurrentTransferSegmentStatus> statusMap
-    ){
-        if(transferResult.isValue()){
-            statusMap.computeIfPresent(segment, (seg, status) -> {
-                long maxTransferredAddress = transferResult.get();
-                status.setLastTransferredAddress(maxTransferredAddress);
-                if(maxTransferredAddress == segment.getEndAddress()){
-                    status.setSegmentStateTransferState(TRANSFERRED);
-                }
-                return status;
-            } );
-        }
-        else{
-            log.error("Unrecoverable transfer error occurred: ", transferResult.getError());
-            statusMap.computeIfPresent(segment, (seg, status) -> {
-                status.setSegmentStateTransferState(FAILED);
-                return status;
-            });
-            // If the unrecoverable error occurs -> short circuit the transfer.
-            throw transferResult.getError();
-        }
-        return null;
+    private static Result<Long, StateTransferException> mergeBatchResults(Result<Long, StateTransferException> firstResult,
+                                                                   Result<Long, StateTransferException> secondResult){
+        return firstResult.flatMap(firstMaxAddressTransferred ->
+                secondResult.map(secondMaxAddressTransferred ->
+                        Math.max(firstMaxAddressTransferred, secondMaxAddressTransferred)));
     }
 
     /**
