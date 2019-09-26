@@ -57,6 +57,12 @@ public interface StreamLog {
      */
     long getGlobalCompactionMark();
 
+    /**
+     * Update the global compaction mark.
+     *
+     * @param globalCompactionMark A remote global compaction mark.
+     */
+    void updateGlobalCompactionMark(long globalCompactionMark);
 
     /**
      * Given an address, read the garbage associated with it.

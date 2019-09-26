@@ -16,12 +16,14 @@ import org.corfudb.infrastructure.log.statetransfer.exceptions.RejectedDataExcep
 import org.corfudb.infrastructure.log.statetransfer.exceptions.RejectedGarbageException;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.StateTransferException;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.StateTransferFailure;
+import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.IMetadata;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
 import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.RuntimeLayout;
+import org.corfudb.runtime.view.replication.IReplicationProtocol;
 import org.corfudb.util.Sleep;
 import org.corfudb.util.retry.ExponentialBackoffRetry;
 import org.corfudb.util.retry.IRetry;
@@ -38,6 +40,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+
+import static org.corfudb.runtime.view.replication.IReplicationProtocol.*;
 
 
 @Slf4j
@@ -246,7 +250,12 @@ public class GCAwareTransferBatchProcessor implements TransferBatchProcessor {
         return runtimeLayout.getLogUnitClient(server)
                 .readGarbageEntries(addresses)
                 .thenApply(readResponse -> {
-                    Map<Long, LogData> readResponseAddresses = readResponse.getAddresses();
+
+                    Map<Long, ILogData> readResponseAddresses =
+                            readResponse.getAddresses().entrySet().stream()
+                                    .collect(Collectors.toMap(Map.Entry::getKey,
+                            entry -> (ILogData) entry.getValue()));
+
                     return handleRead(addresses, readResponseAddresses)
                             .mapError(e ->
                                     new IncompleteGarbageReadException(server,
@@ -266,11 +275,10 @@ public class GCAwareTransferBatchProcessor implements TransferBatchProcessor {
         log.trace("Reading data for addresses: {}", addresses);
 
         AddressSpaceView addressSpaceView = runtimeLayout.getRuntime().getAddressSpaceView();
-
-        return handleRead(addresses,
-                addressSpaceView.read(addresses, readOptions).entrySet()
-                        .stream()
-                        .collect(Collectors.toMap(Map.Entry::getKey, entry -> (LogData) entry.getValue())))
+        ReadResult readResult = addressSpaceView.fetchAllWithCompactionMark(addresses, readOptions);
+        // Update compaction mark using the remote compaction mark.
+        streamLog.updateGlobalCompactionMark(readResult.getCompactionMark());
+        return handleRead(addresses, readResult.getData())
                 .mapError(e -> new IncompleteDataReadException(e.getMissingAddresses()));
     }
 
@@ -299,21 +307,21 @@ public class GCAwareTransferBatchProcessor implements TransferBatchProcessor {
                             .map(IMetadata::getGlobalAddress)
                             .max(Comparator.comparing(Long::valueOf));
             // Should be present as we've checked it during the previous stages.
-            return maxWrittenAddress.orElse(null);
+            return maxWrittenAddress.orElse(-1L);
         });
 
         return result.mapError(x -> new RejectedAppendException(dataEntries));
     }
 
     private static Result<List<LogData>, IncompleteReadException> handleRead(List<Long> addresses,
-                                                                             Map<Long, LogData> readResult) {
+                                                                             Map<Long, ILogData> readResult) {
         List<Long> transferredAddresses =
                 addresses.stream().filter(readResult::containsKey)
                         .collect(Collectors.toList());
         if (transferredAddresses.equals(addresses)) {
             return Result.of(() -> readResult.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
-                    .map(Map.Entry::getValue).collect(Collectors.toList()));
+                    .map(entry -> (LogData)entry.getValue()).collect(Collectors.toList()));
         } else {
             HashSet<Long> transferredSet = new HashSet<>(transferredAddresses);
             HashSet<Long> entireSet = new HashSet<>(addresses);

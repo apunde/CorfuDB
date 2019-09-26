@@ -33,6 +33,7 @@ import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
 
+import org.corfudb.runtime.view.replication.IReplicationProtocol;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.CorfuComponent;
 import org.corfudb.util.MetricsUtils;
@@ -59,7 +60,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-
+import static org.corfudb.runtime.view.replication.IReplicationProtocol.*;
 
 
 /**
@@ -708,6 +709,27 @@ public class AddressSpaceView extends AbstractView {
         }
 
         return result;
+    }
+
+    /**
+     * Same as fetchAll but also retains a compaction mark.
+     * @param addressBatch A batch of addresses to read from.
+     * @param options Read options that modify the behavior of a read.
+     * @return A result containing a map of read addresses and the largest compaction mark.
+     */
+    public ReadResult fetchAllWithCompactionMark(List<Long> addressBatch, ReadOptions options){
+        if(addressBatch.isEmpty()){
+            throw new IllegalStateException("List of addresses should not be empty");
+        }
+        else{
+            return layoutHelper(e -> e.getLayout()
+                    .getReplicationMode(addressBatch.get(0))
+                    .getReplicationProtocol(runtime)
+                    .readAllWithCompactionMark(e,
+                            addressBatch,
+                            options.isWaitForHole(),
+                            options.isServerCacheable()));
+        }
     }
 
     /**

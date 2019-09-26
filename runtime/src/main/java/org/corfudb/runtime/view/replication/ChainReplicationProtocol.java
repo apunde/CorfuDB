@@ -153,7 +153,10 @@ public class ChainReplicationProtocol extends AbstractReplicationProtocol {
 
 
         return new ReadResult(waitOrHoleFill(
-                runtimeLayout, aggregatedResult.getData(), waitForWrite), aggregatedResult.getCompactionMark());
+                runtimeLayout,
+                aggregatedResult.getData(),
+                waitForWrite),
+                aggregatedResult.getCompactionMark());
     }
 
     /**

@@ -145,6 +145,11 @@ public class InMemoryStreamLog implements StreamLog {
     }
 
     @Override
+    public void updateGlobalCompactionMark(long globalCompactionMark) {
+        // No-op
+    }
+
+    @Override
     public LogData readGarbage(long address) {
         return null;
     }
