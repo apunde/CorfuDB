@@ -30,6 +30,7 @@ import org.corfudb.util.Holder;
 import org.corfudb.util.retry.ExponentialBackoffRetry;
 import org.corfudb.util.retry.IRetry;
 import org.corfudb.util.retry.RetryNeededException;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import javax.annotation.Nonnull;
 import java.time.Duration;
@@ -115,6 +116,13 @@ public class QuorumReplicationProtocol extends AbstractReplicationProtocol {
         return addresses.stream()
                 .map(addr -> new SimpleImmutableEntry<>(addr, read(runtimeLayout, addr)))
                 .collect(Collectors.toMap(SimpleImmutableEntry::getKey, SimpleImmutableEntry::getValue));
+    }
+
+    @Override
+    public ReadResult readAllWithCompactionMark(RuntimeLayout runtimeLayout, List<Long> addresses,
+                                                boolean waitForWrite,
+                                                boolean cacheOnServer) {
+        throw new NotImplementedException();
     }
 
     /**

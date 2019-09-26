@@ -1,6 +1,10 @@
 package org.corfudb.runtime.view.replication;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NonNull;
 import org.corfudb.protocols.wireprotocol.ILogData;
+import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.view.RuntimeLayout;
 
@@ -19,6 +23,19 @@ import java.util.Map;
  */
 public interface IReplicationProtocol {
 
+    @AllArgsConstructor
+    @Getter
+    public static class PrefilledReadResult{
+        private final Map<Long, LogData> data;
+        private final long compactionMark;
+    }
+
+    @AllArgsConstructor
+    @Getter
+    public static class ReadResult{
+        private final Map<Long, ILogData> data;
+        private final long compactionMark;
+    }
     /**
      * Write data to the log at the given address.
      *
@@ -74,6 +91,19 @@ public interface IReplicationProtocol {
                                 List<Long> addresses,
                                 boolean waitForWrite,
                                 boolean cacheOnServer);
+
+    /**
+     * This method functions like readAll but also retains the compaction mark.
+     * @param runtimeLayout the RuntimeLayout stamped with layout to use for the read.
+     * @param addresses a list of addresses to read from.
+     * @param waitForWrite flag whether wait for write is required or hole fill directly.
+     * @param cacheOnServer whether the fetch results should be cached on log unit server.
+     * @return a map of addresses to data commit at these address, hole filling if necessary.
+     */
+    ReadResult readAllWithCompactionMark(RuntimeLayout runtimeLayout,
+                                         List<Long> addresses,
+                                         boolean waitForWrite,
+                                         boolean cacheOnServer);
 
     /**
      * Peek data from a given address.

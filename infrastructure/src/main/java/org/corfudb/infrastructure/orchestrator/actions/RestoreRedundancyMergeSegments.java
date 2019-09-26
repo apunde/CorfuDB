@@ -181,7 +181,7 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
                                                       CorfuRuntime runtime)
             throws OutrankedException {
 
-        // Need to be synchronous here.
+        // Filter all the transfers that has been completed.
         List<Entry<CurrentTransferSegment, CurrentTransferSegmentStatus>> completedEntries
                 = stateMap.entrySet().stream().filter(entry -> {
             CompletableFuture<CurrentTransferSegmentStatus> status = entry.getValue();
@@ -190,7 +190,7 @@ public class RestoreRedundancyMergeSegments extends RestoreAction {
                 .join()))
                 .collect(Collectors.toList());
 
-        // If any failed segments exist -> fail. 
+        // If any failed transfers exist -> fail.
         List<Entry<CurrentTransferSegment, CurrentTransferSegmentStatus>> failedEntries =
                 completedEntries
                         .stream()
