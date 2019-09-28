@@ -118,6 +118,14 @@ public abstract class AbstractLogSegment implements AutoCloseable,
     public abstract void append(List<LogData> entries);
 
     /**
+     * Append list of possibly compacted entries to the log segment
+     * file, which ignores the global committed tail.
+     *
+     * @param entries entries to append to the file
+     */
+    public abstract void appendCompacted(List<LogData> entries);
+
+    /**
      * Reads the entire address space of this segment file
      * and update the in-memory metadata if needed. If this
      * is a new segment, a log header will be appended.
@@ -131,18 +139,15 @@ public abstract class AbstractLogSegment implements AutoCloseable,
      * @param logData the LogData to append
      * @return metadata for the written record
      */
-    AddressMetaData writeRecord(long address, LogData logData,
-                                MultiReadWriteLock segmentLock) throws IOException {
+    AddressMetaData writeRecord(long address, LogData logData) throws IOException {
         LogEntry logEntry = getLogEntry(address, logData);
         Metadata metadata = getMetadata(logEntry);
 
         ByteBuffer record = getByteBuffer(metadata, logEntry);
         long channelOffset;
 
-        try (AutoCloseableLock ignored = segmentLock.acquireWriteLock(ordinal)) {
-            channelOffset = writeChannel.position() + METADATA_SIZE;
-            writeByteBuffer(writeChannel, record, logSizeQuota);
-        }
+        channelOffset = writeChannel.position() + METADATA_SIZE;
+        writeByteBuffer(writeChannel, record, logSizeQuota);
 
         return new AddressMetaData(metadata.getPayloadChecksum(), metadata.getLength(), channelOffset);
     }
@@ -154,8 +159,7 @@ public abstract class AbstractLogSegment implements AutoCloseable,
      * @return A map of AddressMetaData for the written records
      * @throws IOException IO exception
      */
-    Map<Long, AddressMetaData> writeRecords(List<LogData> entries,
-                                            MultiReadWriteLock segmentLock) throws IOException {
+    Map<Long, AddressMetaData> writeRecords(List<LogData> entries) throws IOException {
         Map<Long, AddressMetaData> recordsMap = new HashMap<>();
 
         int totalBytes = 0;
@@ -172,21 +176,18 @@ public abstract class AbstractLogSegment implements AutoCloseable,
         }
 
         ByteBuffer allRecordsBuf = ByteBuffer.allocate(totalBytes);
-
-        try (AutoCloseableLock ignored = segmentLock.acquireWriteLock(ordinal)) {
-            long prevPosition = writeChannel.position();
-            for (int i = 0; i < entries.size(); i++) {
-                long channelOffset = prevPosition + allRecordsBuf.position() + METADATA_SIZE;
-                allRecordsBuf.put(entryBuffs.get(i));
-                Metadata metadata = metadataList.get(i);
-                AddressMetaData addressMetaData = new AddressMetaData(
-                        metadata.getPayloadChecksum(), metadata.getLength(), channelOffset);
-                recordsMap.put(entries.get(i).getGlobalAddress(), addressMetaData);
-            }
-
-            allRecordsBuf.flip();
-            writeByteBuffer(writeChannel, allRecordsBuf, logSizeQuota);
+        long prevPosition = writeChannel.position();
+        for (int i = 0; i < entries.size(); i++) {
+            long channelOffset = prevPosition + allRecordsBuf.position() + METADATA_SIZE;
+            allRecordsBuf.put(entryBuffs.get(i));
+            Metadata metadata = metadataList.get(i);
+            AddressMetaData addressMetaData = new AddressMetaData(
+                    metadata.getPayloadChecksum(), metadata.getLength(), channelOffset);
+            recordsMap.put(entries.get(i).getGlobalAddress(), addressMetaData);
         }
+
+        allRecordsBuf.flip();
+        writeByteBuffer(writeChannel, allRecordsBuf, logSizeQuota);
 
         return recordsMap;
     }

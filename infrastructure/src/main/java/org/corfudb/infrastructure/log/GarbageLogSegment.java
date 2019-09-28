@@ -32,10 +32,6 @@ import static org.corfudb.infrastructure.log.StreamLogFiles.getLogData;
 @Slf4j
 public class GarbageLogSegment extends AbstractLogSegment {
 
-    // A file lock for all GarbageLogSegment instances.
-    @Getter
-    static final MultiReadWriteLock segmentLock = new MultiReadWriteLock();
-
     @Getter
     @Setter
     private Map<Long, SMRGarbageEntry> garbageEntryMap = new ConcurrentHashMap<>();
@@ -81,7 +77,7 @@ public class GarbageLogSegment extends AbstractLogSegment {
                 entry.resetPayload(uniqueGarbageEntry);
             }
 
-            writeRecord(address, entry, segmentLock);
+            writeRecord(address, entry);
             compactionMetaData.updateGarbageSize(Collections.singletonList(uniqueGarbageEntry));
             log.trace("append[{}]: Written one garbage entry to disk.", address);
 
@@ -130,7 +126,7 @@ public class GarbageLogSegment extends AbstractLogSegment {
                 uniqueGarbageLogData.add(entry);
             }
 
-            writeRecords(uniqueGarbageLogData, segmentLock);
+            writeRecords(uniqueGarbageLogData);
             compactionMetaData.updateGarbageSize(uniqueGarbageEntries);
 
         } catch (ClosedChannelException cce) {
@@ -140,6 +136,20 @@ public class GarbageLogSegment extends AbstractLogSegment {
             log.error("append: IOException when writing entries: {}", entries, ioe);
             throw new RuntimeException(ioe);
         }
+    }
+
+    /**
+     * Append list of possibly compacted entries to the log segment
+     * file, which ignores the global committed tail.
+     * <p>
+     * For garbage log, the implementation is same as {@link this#append(List)}
+     * since OverwriteException is never thrown.
+     *
+     * @param entries entries to append to the file
+     */
+    @Override
+    public void appendCompacted(List<LogData> entries) {
+        append(entries);
     }
 
     /**
