@@ -234,7 +234,6 @@ public class Orchestrator {
             params.setCacheDisabled(true);
             params.setUseFastLoader(false);
             params.setLayoutServers(servers);
-
             rt = CorfuRuntime.fromParameters(params).connect();
 
             log.info("run: Started workflow {} id {}", workflow.getName(), workflow.getId());
@@ -243,7 +242,13 @@ public class Orchestrator {
 
                 log.debug("run: Started action {} for workflow {}", action.getName(), workflow.getId());
                 long actionStart = System.currentTimeMillis();
-                action.execute(rt, actionRetry);
+                if(action instanceof RestoreAction){
+                    boolean gcCompatible = serverContext.isGCCompatibleStateTransfer();
+                    ((RestoreAction) action).execute(rt, streamLog, gcCompatible, actionRetry);
+                }
+                else{
+                    action.execute(rt, actionRetry);
+                }
                 long actionEnd = System.currentTimeMillis();
                 log.info("run: finished action {} for workflow {} in {} ms",
                         action.getName(), workflow.getId(), actionEnd - actionStart);

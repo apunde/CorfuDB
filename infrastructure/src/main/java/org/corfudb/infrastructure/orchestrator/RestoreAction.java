@@ -15,14 +15,15 @@ public abstract class RestoreAction extends Action {
         throw new NotImplementedException();
     }
 
-    public abstract void impl(@Nonnull CorfuRuntime runtime, @NonNull StreamLog streamLog) throws Exception;
+    public abstract void impl(@Nonnull CorfuRuntime runtime, @NonNull StreamLog streamLog, boolean gcCompatible) throws Exception;
 
     @Nonnull
-    public void execute(@Nonnull CorfuRuntime runtime, @NonNull StreamLog streamLog, int numRetry) {
+    public void execute(@Nonnull CorfuRuntime runtime, @NonNull StreamLog streamLog,
+                        boolean gcCompatible, int numRetry) {
         for (int x = 0; x < numRetry; x++) {
             try {
                 changeStatus(ActionStatus.STARTED);
-                impl(runtime, streamLog);
+                impl(runtime, streamLog, gcCompatible);
                 changeStatus(ActionStatus.COMPLETED);
                 return;
             } catch (Exception e) {
