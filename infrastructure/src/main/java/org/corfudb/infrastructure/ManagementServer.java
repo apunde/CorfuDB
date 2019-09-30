@@ -151,7 +151,7 @@ public class ManagementServer extends AbstractServer {
                 corfuRuntime, serverContext, clusterContext, failureDetector,managementLayout
         );
 
-        orchestrator = new Orchestrator(corfuRuntime, serverContext);
+        orchestrator = new Orchestrator(corfuRuntime, serverContext, streamLog);
     }
 
     /**
@@ -347,6 +347,7 @@ public class ManagementServer extends AbstractServer {
             return;
         }
 
+        boolean gcEnabled = serverContext.isGCCompatibleStateTransfer();
         boolean result = false;
         if (healingLock.tryLock()) {
             try {
@@ -356,7 +357,7 @@ public class ManagementServer extends AbstractServer {
                 result = ReconfigurationEventHandler.handleHealing(
                         managementAgent.getCorfuRuntime(),
                         unresponsiveHealedNodes,
-                        retryWorkflowQueryTimeout);
+                        retryWorkflowQueryTimeout, gcEnabled);
             } finally {
                 healingLock.unlock();
             }

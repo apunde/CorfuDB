@@ -67,14 +67,24 @@ public class ReconfigurationEventHandler {
      * @param runtime Connected corfu runtime instance
      * @return A reasonable timeout to complete state transfer and rebuild logging unit.
      */
-    private static Duration getStateTransferTimeoutEstimate(CorfuRuntime runtime) {
+    private static Duration getStateTransferTimeoutEstimate(CorfuRuntime runtime, boolean gcEnabled) {
 
         // Try to estimate a reasonable timeout to rebuild the logging unit
+
+        long start;
+
+        if(!gcEnabled){
+            start = runtime.getAddressSpaceView().getTrimMark().getSequence();
+        }
+        else{
+            start = 0L;
+        }
+
         Token trimMark = runtime.getAddressSpaceView().getTrimMark();
 
         long tail = runtime.getAddressSpaceView().getLogTail();
 
-        long rangeToReplicate = tail - trimMark.getSequence();
+        long rangeToReplicate = tail - start;
         // Since the orchestrator client and the fault detector client use
         // the same configuration its reasonable to use these arguments.
         // TODO(Maithem): AddNode should use a similar mechanism to set the timeout
@@ -99,13 +109,14 @@ public class ReconfigurationEventHandler {
      */
     public static boolean handleHealing(@Nonnull CorfuRuntime runtime,
                                         @Nonnull Set<String> healedServers,
-                                        @Nonnull Duration retryQueryTimeout) {
+                                        @Nonnull Duration retryQueryTimeout,
+                                        boolean gcEnabled) {
         log.info("Handle healing: {}", healedServers);
 
         try {
             for (String healedServer : healedServers) {
 
-                Duration workflowTimeout = getStateTransferTimeoutEstimate(runtime);
+                Duration workflowTimeout = getStateTransferTimeoutEstimate(runtime, gcEnabled);
                 log.info("handleHealing: Workflow to heal {} timeout set to {} ms", healedServer, workflowTimeout);
 
                 runtime.getManagementView().healNode(
@@ -137,12 +148,13 @@ public class ReconfigurationEventHandler {
      */
     public static boolean handleMergeSegments(@Nonnull CorfuRuntime runtime,
                                               @Nonnull Layout layout,
-                                              @Nonnull Duration retryQueryTimeout) {
+                                              @Nonnull Duration retryQueryTimeout,
+                                              boolean gcEnabled) {
 
         log.info("Handling split segments");
 
         try {
-            Duration workflowTimeout = getStateTransferTimeoutEstimate(runtime);
+            Duration workflowTimeout = getStateTransferTimeoutEstimate(runtime, gcEnabled);
             log.info("handleMergeSegments: Workflow to merge segments for layout {} timeout set to {} ms",
                     layout, workflowTimeout);
 
