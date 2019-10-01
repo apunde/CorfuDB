@@ -10,15 +10,15 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Map;
 
-import com.codahale.metrics.MetricRegistry;
 import lombok.extern.slf4j.Slf4j;
 
 import org.apache.commons.io.FileUtils;
+import org.corfudb.common.metrics.MetricsLevel;
 import org.corfudb.common.metrics.MetricsServer;
 import org.corfudb.common.metrics.servers.PrometheusMetricsServer;
-import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
 import org.corfudb.util.GitRepositoryState;
+import org.corfudb.util.MetricsUtils;
 import org.docopt.Docopt;
 import org.slf4j.LoggerFactory;
 
@@ -57,7 +57,7 @@ public class CorfuServer {
                     + "[-b] [-g -o <username_file> -j <password_file>] "
                     + "[-k <seqcache>] [-T <threads>] [-B <size>] [-i <channel-implementation>] "
                     + "[-H <seconds>] [-I <cluster-id>] [-x <ciphers>] [-z <tls-protocols>]] "
-                    + "[--metrics] [--metrics-port <metrics_port>]"
+                    + "[--metrics-port <metrics_port>] [--metrics-level <metrics_level>]"
                     + "[-P <prefix>] [-R <retention>] [--agent] <port>\n"
                     + "\n"
                     + "Options:\n"
@@ -171,10 +171,11 @@ public class CorfuServer {
                     + "              Number of threads dedicated for the logunit server.\n"
                     + "                                                                          "
                     + " --agent      Run with byteman agent to enable runtime code injection.\n  "
-                    + " --metrics                                                                "
-                    + "              Enable metrics provider.\n                                  "
                     + " --metrics-port=<metrics_port>                                            "
-                    + "              Metrics provider server port [default: 9999].\n             "
+                    + "              Metrics provider server port [default: -1].\n"
+                    + " --metrics-level=<metrics_level>                                          "
+                    + "              The level to use (disabled, monitor, benchmark, verbose)    "
+                    + "[default: monitor].\n"
                     + " -h, --help                                                               "
                     + "              Show this screen\n"
                     + " --version                                                                "
@@ -396,6 +397,7 @@ public class CorfuServer {
      * @param opts Command line parameters.
      */
     private static void setupMetrics(Map<String, Object> opts) {
+        MetricsUtils.setLevel(MetricsLevel.parse(opts));
         PrometheusMetricsServer.Config config = PrometheusMetricsServer.Config.parse(opts);
         MetricsServer server = new PrometheusMetricsServer(config, ServerContext.getMetrics());
         server.start();

@@ -1,5 +1,6 @@
 package org.corfudb.infrastructure;
 
+import com.codahale.metrics.Timer;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Builder;
@@ -34,14 +35,12 @@ import org.corfudb.runtime.exceptions.TrimmedException;
 import org.corfudb.runtime.exceptions.ValueAdoptedException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.view.stream.StreamAddressSpace;
+import org.corfudb.util.CorfuComponent;
+import org.corfudb.util.MetricsUtils;
 import org.corfudb.util.Utils;
 
 import java.lang.invoke.MethodHandles;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -102,6 +101,8 @@ public class LogUnitServer extends AbstractServer {
 
     private ExecutorService executor;
 
+    private final Map<CorfuMsgType, String> timerNameCache = new HashMap<>();
+
     @Override
     public ExecutorService getExecutor(CorfuMsgType corfuMsgType) {
         return executor;
@@ -146,12 +147,17 @@ public class LogUnitServer extends AbstractServer {
      */
     @ServerHandler(type = CorfuMsgType.TAIL_REQUEST)
     public void handleTailRequest(CorfuPayloadMsg<TailsRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
+        Timer timer = getTimer(CorfuMsgType.TAIL_REQUEST);
+        Timer.Context context = MetricsUtils.getConditionalContext(timer);
         log.debug("handleTailRequest: received a tail request {}", msg);
         batchWriter.<TailsResponse>addTask(TAILS_QUERY, msg)
                 .thenAccept(tailsResp -> r.sendResponse(ctx, msg, CorfuMsgType.TAIL_RESPONSE.payloadMsg(tailsResp)))
                 .exceptionally(ex -> {
                     handleException(ex, ctx, msg, r);
                     return null;
+                }).thenApply(res -> {
+                    MetricsUtils.stopConditionalContext(context);
+                    return res;
                 });
     }
 
@@ -161,6 +167,8 @@ public class LogUnitServer extends AbstractServer {
      */
     @ServerHandler(type = CorfuMsgType.LOG_ADDRESS_SPACE_REQUEST)
     public void handleLogAddressSpaceRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        Timer timer = getTimer(CorfuMsgType.LOG_ADDRESS_SPACE_REQUEST);
+        Timer.Context context = MetricsUtils.getConditionalContext(timer);
         CorfuPayloadMsg<Void> payloadMsg = new CorfuPayloadMsg<>();
         payloadMsg.copyBaseFields(msg);
         log.debug("handleLogAddressSpaceRequest: received a log address space request {}", msg);
@@ -170,6 +178,9 @@ public class LogUnitServer extends AbstractServer {
                 .exceptionally(ex -> {
                     handleException(ex, ctx, payloadMsg, r);
                     return null;
+                }).thenApply(res -> {
+                    MetricsUtils.stopConditionalContext(context);
+                    return res;
                 });
     }
 
@@ -212,6 +223,8 @@ public class LogUnitServer extends AbstractServer {
      */
     @ServerHandler(type = CorfuMsgType.WRITE)
     public void write(CorfuPayloadMsg<WriteRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
+        Timer timer = getTimer(CorfuMsgType.WRITE);
+        Timer.Context context = MetricsUtils.getConditionalContext(timer);
         LogData logData = (LogData) msg.getPayload().getData();
         log.debug("log write: type: {}, address: {}, streams: {}", logData.getType(),
                 logData.getToken(), logData.getBackpointerMap());
@@ -230,7 +243,10 @@ public class LogUnitServer extends AbstractServer {
                 }, executor).exceptionally(ex -> {
                     handleException(ex, ctx, msg, r);
                     return null;
-        });
+                }).thenApply(res -> {
+                    MetricsUtils.stopConditionalContext(context);
+                    return res;
+                });
     }
 
     /**
@@ -239,6 +255,8 @@ public class LogUnitServer extends AbstractServer {
     @ServerHandler(type = CorfuMsgType.RANGE_WRITE)
     public void rangeWrite(CorfuPayloadMsg<RangeWriteMsg> msg,
                            ChannelHandlerContext ctx, IServerRouter r) {
+        Timer timer = getTimer(CorfuMsgType.RANGE_WRITE);
+        Timer.Context context = MetricsUtils.getConditionalContext(timer);
         List<LogData> range = msg.getPayload().getEntries();
         log.debug("rangeWrite: Writing {} entries [{}-{}]", range.size(),
                 range.get(0).getGlobalAddress(), range.get(range.size() - 1).getGlobalAddress());
@@ -248,6 +266,9 @@ public class LogUnitServer extends AbstractServer {
                 .exceptionally(ex -> {
                     handleException(ex, ctx, msg, r);
                     return null;
+                }).thenApply(res -> {
+                    MetricsUtils.stopConditionalContext(context);
+                    return res;
                 });
     }
 
@@ -261,12 +282,17 @@ public class LogUnitServer extends AbstractServer {
     @ServerHandler(type = CorfuMsgType.PREFIX_TRIM)
     private void prefixTrim(CorfuPayloadMsg<TrimRequest> msg, ChannelHandlerContext ctx,
                             IServerRouter r) {
+        Timer timer = getTimer(CorfuMsgType.PREFIX_TRIM);
+        Timer.Context context = MetricsUtils.getConditionalContext(timer);
         log.debug("prefixTrim: trimming prefix to {}", msg.getPayload().getAddress());
         batchWriter.addTask(PREFIX_TRIM, msg)
                 .thenRun(() -> r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg()))
                 .exceptionally(ex -> {
                     handleException(ex, ctx, msg, r);
                     return null;
+                }).thenApply(res -> {
+                    MetricsUtils.stopConditionalContext(context);
+                    return res;
                 });
     }
 
@@ -387,6 +413,8 @@ public class LogUnitServer extends AbstractServer {
     private synchronized void resetLogUnit(CorfuPayloadMsg<Long> msg,
                                            ChannelHandlerContext ctx, IServerRouter r) {
 
+        Timer timer = getTimer(CorfuMsgType.RESET_LOGUNIT);
+        Timer.Context context = MetricsUtils.getConditionalContext(timer);
         // Check if the reset request is with an epoch greater than the last reset epoch seen to
         // prevent multiple reset in the same epoch. and should be equal to the current router
         // epoch to prevent stale reset requests from wiping out the data.
@@ -401,10 +429,14 @@ public class LogUnitServer extends AbstractServer {
                     }).exceptionally(ex -> {
                         handleException(ex, ctx, msg, r);
                         return null;
+                    }).thenApply(res -> {
+                        MetricsUtils.stopConditionalContext(context);
+                        return res;
                     });
         } else {
             log.info("LogUnit Server Reset request received but reset already done.");
             r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+            MetricsUtils.stopConditionalContext(context);
         }
     }
 
@@ -488,5 +520,19 @@ public class LogUnitServer extends AbstractServer {
                     .noSync((Boolean) opts.get("--no-sync"))
                     .build();
         }
+    }
+
+    /**
+     * Return a timer based on the type of operation. It will take the name from the cache
+     * initialized at construction of the batch processor to avoid String concatenation.
+     *
+     * @param type type of a {@link CorfuMsgType} instance
+     * @return an instance {@link Timer} corresponding to the provided {@param type}
+     */
+    private Timer getTimer(CorfuMsgType type) {
+        timerNameCache.computeIfAbsent(type,
+                aType -> (CorfuComponent.INFRA_MSG_HANDLER +
+                        aType.name().toLowerCase()));
+        return ServerContext.getMetrics().timer(timerNameCache.get(type));
     }
 }

@@ -17,11 +17,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.Arrays;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * This class implements message handlers for {@link AbstractServer} implementations.
@@ -39,6 +35,12 @@ import java.util.Set;
 public class CorfuMsgHandler {
 
     private final Map<CorfuMsgType, String> timerNameCache = new HashMap<>();
+
+    private static final Set<CorfuMsgType> asyncType = new HashSet<>(Arrays.asList(
+            CorfuMsgType.WRITE, CorfuMsgType.RANGE_WRITE, CorfuMsgType.PREFIX_TRIM,
+            CorfuMsgType.TAIL_REQUEST, CorfuMsgType.RESET_LOGUNIT,
+            CorfuMsgType.LOG_ADDRESS_SPACE_REQUEST
+    ));
 
     /**
      * A functional interface for server message handlers. Server message handlers should
@@ -211,6 +213,11 @@ public class CorfuMsgHandler {
     private Handler<CorfuMsg> generateConditionalHandler(@Nonnull final AbstractServer server,
             @Nonnull final CorfuMsgType type,
             @Nonnull final Handler<CorfuMsg> handler) {
+        //skip asynchronous handlers
+        if (asyncType.contains(type)) {
+            return handler;
+        }
+
         // Generate a timer based on the Corfu message type
         final Timer timer = getTimer(type);
 
@@ -228,7 +235,6 @@ public class CorfuMsgHandler {
         timerNameCache.computeIfAbsent(type,
                                        aType -> (CorfuComponent.INFRA_MSG_HANDLER +
                                                  aType.name().toLowerCase()));
-
         return ServerContext.getMetrics().timer(timerNameCache.get(type));
     }
 }

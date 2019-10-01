@@ -64,7 +64,7 @@ public class BatchProcessor implements AutoCloseable {
      */
     private long sealEpoch;
 
-    private final Map<Type, String> timerNameCache = new HashMap<Type, String>();
+    private final Map<Type, String> timerNameCache = new HashMap<>();
 
     /**
      * Returns a new BatchProcessor for a stream log.
@@ -81,7 +81,6 @@ public class BatchProcessor implements AutoCloseable {
         this.streamLog = streamLog;
         operationsQueue = new LinkedBlockingQueue<>();
         processorService.submit(this::processor);
-        setUpTimerNameCache();
     }
 
     /**
@@ -256,19 +255,9 @@ public class BatchProcessor implements AutoCloseable {
      * @return an instance {@link Timer} corresponding to the provided {@param opType}
      */
     private Timer getTimer(Type opType) {
-        final String timerName = timerNameCache.getOrDefault(opType, CorfuComponent.INFRA_STREAM_OPS + "unknown");
-        return ServerContext.getMetrics().timer(timerName);
-    }
-
-    /**
-     * Initialized the HashMap with the name of timers for different types of operations
-     */
-    private void setUpTimerNameCache() {
-        timerNameCache.put(Type.PREFIX_TRIM, CorfuComponent.INFRA_STREAM_OPS + "prefix-trim");
-        timerNameCache.put(Type.WRITE, CorfuComponent.INFRA_STREAM_OPS + "write");
-        timerNameCache.put(Type.RANGE_WRITE, CorfuComponent.INFRA_STREAM_OPS + "range-write");
-        timerNameCache.put(Type.RESET, CorfuComponent.INFRA_STREAM_OPS + "reset");
-        timerNameCache.put(Type.TAILS_QUERY, CorfuComponent.INFRA_STREAM_OPS + "tails-query");
-        timerNameCache.put(Type.LOG_ADDRESS_SPACE_QUERY, CorfuComponent.INFRA_STREAM_OPS + "log-address-space-query");
+        timerNameCache.computeIfAbsent(opType,
+                aType -> (CorfuComponent.INFRA_STREAM_OPS +
+                        aType.name().toLowerCase()));
+        return ServerContext.getMetrics().timer(timerNameCache.get(opType));
     }
 }

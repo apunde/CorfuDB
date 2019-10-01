@@ -25,6 +25,8 @@ import java.lang.management.ManagementFactory;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.TimeUnit;
 
+import lombok.Setter;
+import org.corfudb.common.metrics.MetricsLevel;
 import org.corfudb.common.metrics.MetricsServer;
 import org.corfudb.common.metrics.servers.PrometheusMetricsServer;
 import org.corfudb.common.metrics.servers.PrometheusMetricsServer.Config;
@@ -82,6 +84,10 @@ public class MetricsUtils {
 
     public static final SizeOf sizeOf = SizeOf.newInstance();
     public static final int NO_METRICS_PORT = -1;
+
+    @Getter
+    @Setter
+    public static MetricsLevel level = MetricsLevel.DISABLED;
 
     /**
      * Load metrics properties.
@@ -393,5 +399,12 @@ public class MetricsUtils {
         if (metricsCollectionEnabled) {
             addCacheMeasurerFor(metrics, cache);
         }
+    }
+
+    public static Timer.Context getConditionalContext(@NonNull Timer t, MetricsLevel other) {
+        if (level.getVal() >= other.getVal()) {
+            return getConditionalContext(metricsCollectionEnabled, t);
+        }
+        return null;
     }
 }

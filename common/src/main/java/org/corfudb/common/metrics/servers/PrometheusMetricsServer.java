@@ -71,16 +71,14 @@ public class PrometheusMetricsServer implements MetricsServer {
         private final int port;
         private final boolean enabled;
         public static final Boolean ENABLED = true;
-        public static final String METRICS_PARAM = "--metrics";
+        public static final int METRICS_PORT_DISABLED = -1;
         public static final String METRICS_PORT_PARAM = "--metrics-port";
 
         public static Config parse(Map<String, Object> opts) {
-            boolean enabled = Optional.ofNullable(opts.get(METRICS_PARAM))
-                    .map(e -> (boolean)e)
-                    .orElse(false);
             int port = Optional.ofNullable(opts.get(METRICS_PORT_PARAM))
                     .map(p -> Integer.parseInt(p.toString()))
-                    .orElse(-1);
+                    .orElse(METRICS_PORT_DISABLED);
+            boolean enabled = port != METRICS_PORT_DISABLED;
             return new Config(port, enabled);
         }
     }
