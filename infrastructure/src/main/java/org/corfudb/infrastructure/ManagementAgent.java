@@ -69,16 +69,26 @@ public class ManagementAgent {
 
     /**
      * Interval in executing the failure detection policy.
-     * In milliseconds.
      */
     @Getter
     private static final Duration POLICY_EXECUTE_INTERVAL = Duration.ofSeconds(1);
+
+    /**
+     * Interval of executing all rounds of SequencerTrimService.
+     */
+    @Getter
+    private static final Duration SEQUENCER_TRIM_INTERVAL = Duration.ofHours(1);
 
     /**
      * MonitoringService to detect faults and generate a cluster connectivity graph.
      */
     @Getter
     private final RemoteMonitoringService remoteMonitoringService;
+
+    /**
+     * sequencerTrimService periodically trims compacted addresses at address space view of sequencer.
+     */
+    private final SequencerTrimService sequencerTrimService;
 
     /**
      * Checks and restores if a layout is present in the local datastore to recover from.
@@ -123,6 +133,8 @@ public class ManagementAgent {
                 failureDetector,
                 localMonitoringService
         );
+
+        this.sequencerTrimService = new SequencerTrimService(serverContext, runtimeSingletonResource);
 
         // Creating the initialization task thread.
         // This thread pool is utilized to dispatch one time recovery and sequencer bootstrap tasks.
@@ -192,6 +204,7 @@ public class ManagementAgent {
         if (!shutdown) {
             localMonitoringService.start(METRICS_POLL_INTERVAL);
             remoteMonitoringService.start(POLICY_EXECUTE_INTERVAL);
+            sequencerTrimService.start(SEQUENCER_TRIM_INTERVAL);
         }
     }
 
@@ -221,6 +234,7 @@ public class ManagementAgent {
 
         remoteMonitoringService.shutdown();
         localMonitoringService.shutdown();
+        sequencerTrimService.shutdown();
 
         log.info("Management Agent shutting down.");
     }

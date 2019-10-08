@@ -17,18 +17,17 @@ import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.IMetadata;
-import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.KnownAddressRequest;
 import org.corfudb.protocols.wireprotocol.KnownAddressResponse;
+import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.MultipleReadRequest;
 import org.corfudb.protocols.wireprotocol.RangeWriteMsg;
 import org.corfudb.protocols.wireprotocol.ReadRequest;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
+import org.corfudb.protocols.wireprotocol.StreamsAddressRequest;
 import org.corfudb.protocols.wireprotocol.StreamsAddressResponse;
 import org.corfudb.protocols.wireprotocol.TailsRequest;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
-import org.corfudb.protocols.wireprotocol.Token;
-import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.util.CorfuComponent;
@@ -238,7 +237,16 @@ public class LogUnitClient extends AbstractClient {
      * @return A CompletableFuture which will complete with the address space map for all streams.
      */
     public CompletableFuture<StreamsAddressResponse> getLogAddressSpace() {
-        return sendMessageWithFuture(CorfuMsgType.LOG_ADDRESS_SPACE_REQUEST.msg());
+        return getLogAddressSpace(StreamsAddressRequest.TOTAL);
+    }
+
+    /**
+     * Gets the address space for requested streams.
+     * @param request steams in interest.
+     * @return A CompletableFuture which will complete with the address space map for requested streams.
+     */
+    public CompletableFuture<StreamsAddressResponse> getLogAddressSpace(StreamsAddressRequest request) {
+        return sendMessageWithFuture(CorfuMsgType.LOG_ADDRESS_SPACE_REQUEST.payloadMsg(request));
     }
 
     /**

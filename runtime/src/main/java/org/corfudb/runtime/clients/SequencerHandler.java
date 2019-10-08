@@ -7,11 +7,7 @@ import java.lang.invoke.MethodHandles;
 import lombok.Getter;
 import lombok.Setter;
 
-import org.corfudb.protocols.wireprotocol.CorfuMsgType;
-import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
-import org.corfudb.protocols.wireprotocol.SequencerMetrics;
-import org.corfudb.protocols.wireprotocol.StreamsAddressResponse;
-import org.corfudb.protocols.wireprotocol.TokenResponse;
+import org.corfudb.protocols.wireprotocol.*;
 
 
 /**
@@ -54,6 +50,12 @@ public class SequencerHandler implements IClient, IHandler<SequencerClient> {
     @ClientHandler(type = CorfuMsgType.STREAMS_ADDRESS_RESPONSE)
     private static Object handleStreamAddressesResponse(CorfuPayloadMsg<StreamsAddressResponse> msg,
                                               ChannelHandlerContext ctx, IClientRouter r) {
+        return msg.getPayload();
+    }
+
+    @ClientHandler(type = CorfuMsgType.STREAMS_ID_RESPONSE)
+    private static Object handleStreamsIdResponse(CorfuPayloadMsg<StreamsIdResponse> msg, ChannelHandlerContext ctx,
+                                                  IClientRouter r) {
         return msg.getPayload();
     }
 }

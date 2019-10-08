@@ -21,11 +21,13 @@ import org.corfudb.protocols.logprotocol.CheckpointEntry;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.IMetadata;
 import org.corfudb.protocols.wireprotocol.LogData;
+import org.corfudb.protocols.wireprotocol.StreamAddressRange;
 import org.corfudb.protocols.wireprotocol.StreamsAddressResponse;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.LogUnitException;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
+import org.corfudb.util.Utils;
 import org.roaringbitmap.longlong.LongIterator;
 import org.roaringbitmap.longlong.Roaring64NavigableMap;
 
@@ -301,6 +303,12 @@ public class StreamLogFiles implements StreamLog {
     @Override
     public StreamsAddressResponse getStreamsAddressSpace() {
         return new StreamsAddressResponse(logMetadata.getGlobalTail(), logMetadata.getStreamsAddressSpaceMap());
+    }
+
+    @Override
+    public StreamsAddressResponse getStreamsAddressSpace(List<StreamAddressRange> addressRanges) {
+        return new StreamsAddressResponse(logMetadata.getGlobalTail(),
+                Utils.getStreamsAddresses(logMetadata.getStreamsAddressSpaceMap(), addressRanges));
     }
 
     @Override
