@@ -5,6 +5,7 @@ import com.codahale.metrics.Timer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.Token;
+import org.corfudb.runtime.collections.SMRMap;
 import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.object.CorfuCompileProxy;
 import org.corfudb.runtime.object.ICorfuSMR;
@@ -67,7 +68,7 @@ public class MultiCheckpointWriter<T extends Map> {
 
                 CheckpointWriter<T> cpw = new CheckpointWriter(rt, streamId, author, (T) map);
                 ISerializer serializer =
-                        ((CorfuCompileProxy<Map>) map.getCorfuSMRProxy())
+                        ((CorfuCompileProxy<SMRMap<String, String>>) map.getCorfuSMRProxy())
                                 .getSerializer();
                 cpw.setSerializer(serializer);
 

@@ -59,7 +59,7 @@ import java.util.function.Supplier;
  * <p>Created by mwei on 11/11/16.
  */
 @Slf4j
-public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
+public class CorfuCompileProxy<T extends ISMRObject<T>> implements ICorfuSMRProxyInternal<T> {
 
     /**
      * The underlying object. This object stores the actual

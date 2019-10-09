@@ -1,6 +1,5 @@
 package org.corfudb.runtime.object;
 
-import org.corfudb.runtime.collections.ISMRObject;
 import org.corfudb.util.ReflectionUtils;
 import org.junit.Test;
 import java.lang.reflect.InvocationTargetException;

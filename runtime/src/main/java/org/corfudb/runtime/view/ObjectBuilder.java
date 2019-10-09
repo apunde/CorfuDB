@@ -19,6 +19,7 @@ import org.corfudb.runtime.object.CorfuCompileProxy;
 import org.corfudb.runtime.object.CorfuCompileWrapperBuilder;
 import org.corfudb.runtime.object.ICorfuSMR;
 import org.corfudb.runtime.object.IObjectBuilder;
+import org.corfudb.runtime.object.ISMRObject;
 import org.corfudb.util.serializer.ISerializer;
 import org.corfudb.util.serializer.Serializers;
 
@@ -28,7 +29,7 @@ import org.corfudb.util.serializer.Serializers;
 @Accessors(chain = true)
 @Data
 @Slf4j
-public class ObjectBuilder<T> implements IObjectBuilder<T> {
+public class ObjectBuilder<T extends ISMRObject<T>> implements IObjectBuilder<T> {
 
     final CorfuRuntime runtime;
 
@@ -53,13 +54,13 @@ public class ObjectBuilder<T> implements IObjectBuilder<T> {
     Object[] arguments = new Object[0];
 
     @SuppressWarnings("unchecked")
-    public <R> ObjectBuilder<R> setType(Class<R> type) {
+    public <R extends ISMRObject<R>> ObjectBuilder<R> setType(Class<R> type) {
         this.type = (Class<T>) type;
         return (ObjectBuilder<R>) this;
     }
 
     @SuppressWarnings("unchecked")
-    public <R> ObjectBuilder<R> setTypeToken(TypeToken<R> typeToken) {
+    public <R extends ISMRObject<R>> ObjectBuilder<R> setTypeToken(TypeToken<R> typeToken) {
         this.type = (Class<T>) typeToken.getRawType();
         return (ObjectBuilder<R>) this;
     }

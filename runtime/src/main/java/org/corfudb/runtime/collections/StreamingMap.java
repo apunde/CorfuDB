@@ -14,14 +14,31 @@ import java.util.stream.Stream;
  * @param <V> value type
  */
 public interface StreamingMap<K, V> extends Map<K, V>, AutoCloseable {
+
     /**
-     * sdfasdfdsf.
-     * @return asdfsdf
+     * Return an optional implementation of the {@link StreamingMap} that
+     * is used only during optimistic (non-committed) operations.
+     *
+     * It is the responsibility of the data-structure to query this map during
+     * any sort of access operations.
+     *
+     * @return {@link StreamingMap} representing non-committed changes
+     */
+    default StreamingMap<K, V> getOptimisticMap() {
+        return this;
+    }
+
+    /**
+     * Stream containing all the elements in the map.
+     *
+     * Ideally, this function should be lazy.
+     *
+     * @return a stream representing all the values in the map
      */
     Stream<Map.Entry<K, V>> entryStream();
 
     /**
-     * dsfasdfads.
+     * Relinquish all the resources associated with this map.
      */
     default void close() {
     }

@@ -36,6 +36,7 @@ import java.util.stream.Stream;
 @Slf4j
 public class PersistedStreamingMap<K, V> implements StreamingMap<K, V> {
 
+    private final StreamingMap<K, V> optimisticMap = new StreamingMapDecorator<>();
     private final AtomicInteger dataSetSize = new AtomicInteger();
     private final CorfuRuntime corfuRuntime;
     private final ISerializer serializer;
@@ -282,6 +283,14 @@ public class PersistedStreamingMap<K, V> implements StreamingMap<K, V> {
     @Override
     public Set<Entry<K, V>> entrySet() {
         throw new UnsupportedOperationException();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public StreamingMap<K, V> getOptimisticMap() {
+        return optimisticMap;
     }
 
     /**

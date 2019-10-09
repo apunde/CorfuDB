@@ -5,6 +5,7 @@ import lombok.Setter;
 import org.corfudb.annotations.Accessor;
 import org.corfudb.annotations.CorfuObject;
 import org.corfudb.annotations.Mutator;
+import org.corfudb.runtime.object.ISMRObject;
 
 /**
  * Corfu objects may be compound, and work as expected.
@@ -13,7 +14,7 @@ import org.corfudb.annotations.Mutator;
  * Created by dmalkhi on 1/5/17.
  */
 @CorfuObject
-public class CorfuCompoundObject {
+public class CorfuCompoundObject implements ISMRObject<CorfuCompoundObject> {
 
     public class Inner {
         @Setter
@@ -37,4 +38,12 @@ public class CorfuCompoundObject {
 
     @Accessor
     public int getID() { return ID;}
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public CorfuCompoundObject getContext(Context context) {
+        return this;
+    }
 }

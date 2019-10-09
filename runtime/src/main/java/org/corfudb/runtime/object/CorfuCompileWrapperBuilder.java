@@ -30,9 +30,9 @@ public class CorfuCompileWrapperBuilder {
      * @throws InstantiationException Cannot instantiate the object using the arguments and class.
      */
     @SuppressWarnings("checkstyle:abbreviation")
-    public static <T> T getWrapper(Class<T> type, CorfuRuntime rt,
-                                   UUID streamID, Object[] args,
-                                   ISerializer serializer)
+    public static <T extends ISMRObject<T>> T getWrapper(Class<T> type, CorfuRuntime rt,
+                                                         UUID streamID, Object[] args,
+                                                         ISerializer serializer)
             throws ClassNotFoundException, IllegalAccessException,
             InstantiationException, InvocationTargetException {
         // Do we have a compiled wrapper for this type?

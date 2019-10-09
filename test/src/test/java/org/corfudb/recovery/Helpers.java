@@ -10,6 +10,7 @@ import org.corfudb.runtime.collections.CorfuTable;
 import org.corfudb.runtime.collections.SMRMap;
 import org.corfudb.runtime.object.CorfuCompileProxy;
 import org.corfudb.runtime.object.ICorfuSMR;
+import org.corfudb.runtime.object.ISMRObject;
 import org.corfudb.runtime.object.VersionLockedObject;
 import org.corfudb.runtime.view.ObjectsView;
 
@@ -33,7 +34,7 @@ public class Helpers{
         return createMap(streamName, cr, SMRMap.class);
     }
 
-    static <T> Map<String, String> createMap(String streamName, CorfuRuntime cr, Class<T> type) {
+    static <T extends ISMRObject> Map<String, String> createMap(String streamName, CorfuRuntime cr, Class<T> type) {
         return (Map<String, String>) cr.getObjectsView().build()
                 .setStreamName(streamName)
                 .setType(type)
