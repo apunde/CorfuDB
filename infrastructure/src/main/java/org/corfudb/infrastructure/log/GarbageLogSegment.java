@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.ResourceQuota;
+import org.corfudb.infrastructure.log.MultiReadWriteLock.AutoCloseableLock;
 import org.corfudb.protocols.logprotocol.SMRGarbageEntry;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.LogData;
@@ -31,6 +32,11 @@ import static org.corfudb.infrastructure.log.StreamLogFiles.getLogData;
  */
 @Slf4j
 public class GarbageLogSegment extends AbstractLogSegment {
+
+    // A lock for all GarbageLogSegment instances, which is required by compactor
+    // in case this segment is being written while compaction is on going.
+    @Getter
+    static final MultiReadWriteLock segmentLock = new MultiReadWriteLock();
 
     @Getter
     @Setter
@@ -62,7 +68,7 @@ public class GarbageLogSegment extends AbstractLogSegment {
      */
     @Override
     public void append(long address, LogData entry) {
-        try {
+        try (AutoCloseableLock ignored = segmentLock.acquireWriteLock(ordinal)) {
             SMRGarbageEntry garbageEntry = (SMRGarbageEntry) entry.getPayload(null);
             SMRGarbageEntry uniqueGarbageEntry = mergeGarbageEntry(address, garbageEntry);
 

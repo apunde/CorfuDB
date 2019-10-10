@@ -57,10 +57,14 @@ class StreamLogSegment extends AbstractLogSegment {
     @Override
     public LogData read(long address) {
         try {
-            if (!contains(address)) {
+            // Check if the entry exists, if state transfer is required,
+            // the committedTail should be ignored for existence check.
+            if (!contains(address, dataStore.getRequireStateTransfer())) {
                 return null;
             }
 
+            // If the address exists but not found in index,
+            // it means the entire address was compacted.
             AddressMetaData metaData = knownAddresses.get(address);
             if (metaData == null) {
                 return LogData.getCompacted(address);
@@ -103,8 +107,9 @@ class StreamLogSegment extends AbstractLogSegment {
     @Override
     public void append(long address, LogData entry) {
         try {
-            // Check if the entry exists.
-            if (contains(address)) {
+            // Check if the entry exists, if state transfer is required,
+            // the committedTail should be ignored for existence check.
+            if (contains(address, dataStore.getRequireStateTransfer())) {
                 processOverwriteEntry(address, entry);
             }
 
@@ -136,8 +141,9 @@ class StreamLogSegment extends AbstractLogSegment {
                 return;
             }
 
-            // Check if any entry exists.
-            if (containsAny(entries, false)) {
+            // Check if the entry exists, if state transfer is required,
+            // the committedTail should be ignored for existence check.
+            if (containsAny(entries, dataStore.getRequireStateTransfer())) {
                 log.debug("append: Overwritten exception, entries: {}", entries);
                 throw new OverwriteException(OverwriteCause.SAME_DATA);
             }
@@ -188,20 +194,32 @@ class StreamLogSegment extends AbstractLogSegment {
 
     /**
      * Check if the entry exists (not a hole) in this segment, including compacted.
+     *
+     * @param ignoreCommittedTail if the committed tail should be ignored
+     *                            there are two cases where this should be ignored:
+     *                            1) compaction is happening on this segment
+     *                            2) this log unit requires state transfer
      */
-    boolean contains(long address) {
+    boolean contains(long address, boolean ignoreCommittedTail) {
         // Addresses less than or equal to committedTail are consolidated and could be
         // compacted, if an address is not in index, then it is a hole if and only if
         // it is greater than committedTail.
-        return knownAddresses.containsKey(address) || address <= dataStore.getCommittedTail();
+        return knownAddresses.containsKey(address) ||
+                (!ignoreCommittedTail && address <= dataStore.getCommittedTail());
     }
 
     /**
      * Check if any entry in a list exists (not a hole) in this segment, including compacted.
+     *
+     * @param ignoreCommittedTail if the committed tail should be ignored
+     *                            there are two cases where this should be ignored:
+     *                            1) compaction is happening on this segment
+     *                            2) this log unit requires state transfer
      */
-    private boolean containsAny(List<LogData> entries, boolean ignoreCommitted) {
+    private boolean containsAny(List<LogData> entries, boolean ignoreCommittedTail) {
         // Assume the entries are ordered by address, which is checked in upper layer.
-        if (!ignoreCommitted && entries.get(entries.size() - 1).getGlobalAddress() <= dataStore.getCommittedTail()) {
+        if (!ignoreCommittedTail &&
+                entries.get(entries.size() - 1).getGlobalAddress() <= dataStore.getCommittedTail()) {
             return true;
         }
         return entries.stream().anyMatch(entry -> knownAddresses.containsKey(entry.getGlobalAddress()));

@@ -269,9 +269,15 @@ public class SegmentManager {
      * @return a list of segments that can be selected for compaction
      */
     List<CompactionMetadata> getCompactibleSegments() {
+        // Do not compact any segment if state transfer is required and not finished.
+        if (dataStore.getRequireStateTransfer()) {
+            return Collections.emptyList();
+        }
+
         // Take a snapshot of the current segmentCompactionMetadata.
         Map<Long, CompactionMetadata> metaDataMapCopy = new HashMap<>(segmentCompactionMetadata);
 
+        // Check if any segment can be selected other than the protected ones.
         if (metaDataMapCopy.size() <= logParams.protectedSegments) {
             return Collections.emptyList();
         }

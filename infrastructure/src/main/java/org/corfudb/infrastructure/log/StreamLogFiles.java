@@ -307,6 +307,11 @@ public class StreamLogFiles implements StreamLog {
         dataStore.updateCommittedTail(committedTail);
     }
 
+    @Override
+    public void setRequireStateTransfer(boolean isRequired) {
+        dataStore.setRequireStateTransfer(isRequired);
+    }
+
     private void verifyLogs() {
         String[] extension = {"log"};
         File dir = logDir.toFile();
@@ -483,7 +488,7 @@ public class StreamLogFiles implements StreamLog {
                 updateGlobalMetaData(address, Collections.singletonList(entry), segment);
                 return;
             } catch (ClosedSegmentException e) {
-                log.warn("Segment channel closed by compactor, retry for another time.");
+                log.warn("Segment channel closed by compactor, retry.");
                 // Segment could be closed because of compaction, retry once.
                 if (retryCount == CLOSE_SEGMENT_EXCEPTION_RETRY) {
                     throw e;
@@ -525,7 +530,7 @@ public class StreamLogFiles implements StreamLog {
                         : segmentManager.getGarbageLogSegment(address);
                 return segment.read(address);
             } catch (ClosedSegmentException e) {
-                log.warn("Segment channel closed by compactor, retry for another time.");
+                log.warn("Segment channel closed by compactor, retry.");
                 // Segment could be closed because of compaction, retry once.
                 if (retryCount++ == CLOSE_SEGMENT_EXCEPTION_RETRY) {
                     throw e;
@@ -540,9 +545,9 @@ public class StreamLogFiles implements StreamLog {
         while (true) {
             try {
                 StreamLogSegment segment = segmentManager.getStreamLogSegment(address);
-                return segment.contains(address);
+                return segment.contains(address, dataStore.getRequireStateTransfer());
             } catch (ClosedSegmentException e) {
-                log.warn("Segment channel closed by compactor, retry for another time.");
+                log.warn("Segment channel closed by compactor, retry.");
                 // Segment could be closed because of compaction, retry once.
                 if (retryCount++ == CLOSE_SEGMENT_EXCEPTION_RETRY) {
                     throw e;
@@ -579,10 +584,7 @@ public class StreamLogFiles implements StreamLog {
 
         segmentManager.cleanAndClose(endSegment);
 
-        dataStore.resetHeadSegment();
-        dataStore.resetTailSegment();
-        dataStore.resetGlobalCompactionMark();
-        dataStore.resetCommittedTail();
+        dataStore.reset();
         logMetadata = new LogMetadata();
         segmentsToSync.clear();
         logSizeQuota = new ResourceQuota("LogSizeQuota", logSizeLimit);
