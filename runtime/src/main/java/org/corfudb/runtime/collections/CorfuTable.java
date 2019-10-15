@@ -37,6 +37,7 @@ import org.corfudb.annotations.Mutator;
 import org.corfudb.annotations.MutatorAccessor;
 import org.corfudb.annotations.TransactionalMethod;
 import org.corfudb.runtime.object.ICorfuExecutionContext;
+import org.corfudb.runtime.object.ICorfuVersionPolicy;
 import org.corfudb.runtime.object.ISMRObject;
 
 /** The CorfuTable implements a simple key-value store.
@@ -221,6 +222,7 @@ public class CorfuTable<K ,V>
     private final Set<Index<K, V, ? extends Comparable>> indexSpec;
     private final Map<String, Map<Comparable, Map<K, V>>> secondaryIndexes;
     private final CorfuTable<K, V> optimisticTable;
+    private final VersionPolicy versionPolicy;
 
     public CorfuTable(StreamingMap<K,V> mainMap,
                       Set<Index<K, V, ? extends Comparable>> indexSpec,
@@ -230,14 +232,17 @@ public class CorfuTable<K ,V>
         this.indexSpec = indexSpec;
         this.secondaryIndexes = secondaryIndexe;
         this.optimisticTable = optimisticTable;
+        this.versionPolicy = ICorfuVersionPolicy.DEFAULT;
     }
     /**
      * Generate a table with a given implementation for the {@link StreamingMap}.
      */
-    public CorfuTable(IndexRegistry<K, V> indices, StreamingMap<K, V> streamingMap) {
+    public CorfuTable(IndexRegistry<K, V> indices, StreamingMap<K, V> streamingMap,
+                      VersionPolicy versionPolicy) {
         this.indexSpec = new HashSet<>();
         this.secondaryIndexes = new HashMap<>();
         this.mainMap = streamingMap;
+        this.versionPolicy = versionPolicy;
 
         this.optimisticTable = new CorfuTable<>(this.mainMap.getOptimisticMap(), this.indexSpec,
                 this.secondaryIndexes, null);
@@ -255,7 +260,7 @@ public class CorfuTable<K ,V>
      * Generate a table with a given implementation for the {@link Map}.
      */
     public CorfuTable(IndexRegistry<K, V> indices, Map<K, V> mapImpl) {
-        this(indices, new StreamingMapDecorator<>(mapImpl));
+        this(indices, new StreamingMapDecorator<>(mapImpl), ICorfuVersionPolicy.DEFAULT);
     }
 
     /**
@@ -278,7 +283,7 @@ public class CorfuTable<K ,V>
      * and without any secondary indexes.
      */
     public CorfuTable(PersistedStreamingMap<K, V> streamingMap) {
-        this(IndexRegistry.empty(), streamingMap);
+        this(IndexRegistry.empty(), streamingMap, ICorfuVersionPolicy.MONOTONIC);
     }
 
     /**
@@ -822,5 +827,13 @@ public class CorfuTable<K ,V>
     protected void clearIndex() {
         indexSpec.clear();
         secondaryIndexes.clear();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public VersionPolicy getVersionPolicy() {
+        return versionPolicy;
     }
 }

@@ -292,6 +292,10 @@ public class VersionLockedObject<T extends ISMRObject<T>> {
      *                             the supplied version.
      */
     public void rollbackObjectUnsafe(long timestamp) {
+        if (object.getVersionPolicy() == ICorfuVersionPolicy.MONOTONIC) {
+            return; // We are not allowed to go back in time.
+        }
+
         if (getVersionUnsafe() <= timestamp) {
             return; // We are already behind the timestamp.
         }

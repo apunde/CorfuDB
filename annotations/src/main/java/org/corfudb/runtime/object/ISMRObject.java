@@ -8,5 +8,6 @@ package org.corfudb.runtime.object;
  *
  * @param <T> The underlying object type
  */
-public interface ISMRObject<T> extends ICorfuExecutionContext<T> {
+public interface ISMRObject<T>
+        extends ICorfuExecutionContext<T>, ICorfuVersionPolicy {
 }
