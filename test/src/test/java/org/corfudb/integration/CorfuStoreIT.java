@@ -18,11 +18,13 @@ import org.corfudb.util.serializer.ISerializer;
 import org.corfudb.util.serializer.Serializers;
 import org.junit.Before;
 import org.junit.Test;
+import org.corfudb.test.CorfuServerRunner;
 
 import java.io.IOException;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.corfudb.test.CorfuServerRunner.getCorfuServerLogPath;
 
 /**
  * Simple test that inserts data into CorfuStore via a separate server process
@@ -36,7 +38,7 @@ public class CorfuStoreIT extends AbstractIT {
     /* A helper method that takes host and port specification, start a single server and
      *  returns a process. */
     private Process runSinglePersistentServer(String host, int port) throws IOException {
-        return new AbstractIT.CorfuServerRunner()
+        return new CorfuServerRunner()
                 .setHost(host)
                 .setPort(port)
                 .setLogPath(getCorfuServerLogPath(host, port))

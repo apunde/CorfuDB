@@ -11,8 +11,6 @@ import lombok.NonNull;
 import lombok.ToString;
 import org.corfudb.universe.node.Node.NodeParams;
 import org.corfudb.universe.node.Node.NodeType;
-import org.corfudb.universe.node.server.CorfuServer.Mode;
-import org.corfudb.universe.node.server.CorfuServer.Persistence;
 import org.slf4j.event.Level;
 
 import java.time.Duration;
@@ -37,11 +35,12 @@ public class SupportServerParams implements NodeParams {
     @Default
     @NonNull
     @Getter
-    private final Level logLevel = Level.DEBUG;
+    private final Level logLevel = Level.INFO;
 
+    @Default
     @NonNull
     @Getter
-    private final NodeType nodeType;
+    private final NodeType nodeType = NodeType.METRICS_SERVER;
 
     @Getter
     @NonNull
@@ -61,4 +60,7 @@ public class SupportServerParams implements NodeParams {
         return ImmutableSet.of(PORTS.get(getNodeType()));
     }
 
+    public boolean isEnabled() {
+        return !metricPorts.isEmpty();
+    }
 }
