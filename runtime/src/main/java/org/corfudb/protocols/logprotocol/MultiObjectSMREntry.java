@@ -1,20 +1,21 @@
 package org.corfudb.protocols.logprotocol;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import lombok.ToString;
+import lombok.extern.slf4j.Slf4j;
+import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.util.serializer.Serializers;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import lombok.Getter;
-import lombok.ToString;
-import lombok.extern.slf4j.Slf4j;
-import org.corfudb.protocols.wireprotocol.ILogData;
-import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.util.serializer.Serializers;
-
+import static com.google.common.base.Preconditions.checkState;
 
 
 /**
@@ -27,51 +28,45 @@ import org.corfudb.util.serializer.Serializers;
 public class MultiObjectSMREntry extends LogEntry implements ISMRConsumable {
 
     // map from stream-ID to a list of updates encapsulated as MultiSMREntry
-    @Getter
-    public Map<UUID, MultiSMREntry> entryMap = Collections.synchronizedMap(new HashMap<>());
+    private Map<UUID, MultiSMREntry> streamUpdates = new HashMap<>();
+
+    /**
+     *
+     */
+    private final Map<UUID, byte[]> streamBuffers = new HashMap<>();
 
     public MultiObjectSMREntry() {
         this.type = LogEntryType.MULTIOBJSMR;
     }
 
-    public MultiObjectSMREntry(Map<UUID, MultiSMREntry> entryMap) {
-        this.type = LogEntryType.MULTIOBJSMR;
-        this.entryMap = entryMap;
-    }
-
-    /** Extract a particular stream's entry from this object.
-     *
-     * @param streamID StreamID
-     * @return the MultiSMREntry corresponding to streamId
-     */
-    protected MultiSMREntry getStreamEntry(UUID streamID) {
-        return getEntryMap().computeIfAbsent(streamID, u -> {
-                    return new MultiSMREntry();
-                }
-        );
-    }
-
     /**
      * Add one SMR-update to one object's update-list.
-     * @param streamID StreamID
+     *
+     * @param streamID    StreamID
      * @param updateEntry SMREntry to add
      */
-    public void addTo(UUID streamID, SMREntry updateEntry) {
-        getStreamEntry(streamID).addTo(updateEntry);
+    public synchronized void addTo(UUID streamID, SMREntry updateEntry) {
+        checkState(streamBuffers.isEmpty());
+        MultiSMREntry multiSMREntry = streamUpdates.computeIfAbsent(streamID, k -> new MultiSMREntry());
+        multiSMREntry.addTo(updateEntry);
     }
 
     /**
      * merge two MultiObjectSMREntry records.
      * merging is done object-by-object
+     *
      * @param other Object to merge.
      */
-    public void mergeInto(MultiObjectSMREntry other) {
+    public synchronized void mergeInto(MultiObjectSMREntry other) {
+        checkState(streamBuffers.isEmpty());
+
         if (other == null) {
             return;
         }
 
-        other.getEntryMap().forEach((streamID, multiSmrEntry) -> {
-            getStreamEntry(streamID).mergeInto(multiSmrEntry);
+        other.getEntryMap().forEach((otherStreamID, otherMultiSmrEntry) -> {
+            MultiSMREntry multiSMREntry = streamUpdates.computeIfAbsent(otherStreamID, k -> new MultiSMREntry());
+            multiSMREntry.mergeInto(otherMultiSmrEntry);
         });
     }
 
@@ -81,50 +76,88 @@ public class MultiObjectSMREntry extends LogEntry implements ISMRConsumable {
      * @param b The remaining buffer.
      */
     @Override
-    void deserializeBuffer(ByteBuf b, CorfuRuntime rt) {
+    public synchronized void deserializeBuffer(ByteBuf b, CorfuRuntime rt) {
         super.deserializeBuffer(b, rt);
+        int numStreams = b.readInt();
+        for (int i = 0; i < numStreams; i++) {
+            UUID streamId = new UUID(b.readLong(), b.readLong());
 
-        int numUpdates = b.readInt();
-        entryMap = new HashMap<>();
-        for (int i = 0; i < numUpdates; i++) {
-            entryMap.put(
-                    new UUID(b.readLong(), b.readLong()),
-                    ((MultiSMREntry) Serializers.CORFU.deserialize(b, rt)));
+            int updateLength = b.readInt();
+            byte[] streamUpdates = new byte[updateLength];
+            b.readBytes(streamUpdates);
+            streamBuffers.put(streamId, streamUpdates);
         }
     }
 
     @Override
-    public void serialize(ByteBuf b) {
+    public synchronized void serialize(ByteBuf b) {
         super.serialize(b);
-        b.writeInt(entryMap.size());
-        entryMap.entrySet().stream()
+        b.writeInt(streamUpdates.size());
+        streamUpdates.entrySet().stream()
                 .forEach(x -> {
                     b.writeLong(x.getKey().getMostSignificantBits());
                     b.writeLong(x.getKey().getLeastSignificantBits());
-                    Serializers.CORFU.serialize(x.getValue(), b);
+
+                    int payloadSizeIndex = b.writerIndex();
+                    b.writeInt(0);
+                    int payloadIndex = b.writerIndex();
+                    b.writeInt(x.getValue().getUpdates().size());
+                    x.getValue().getUpdates().stream().forEach(smrEntry -> Serializers.CORFU.serialize(smrEntry, b));
+                    int length = b.writerIndex() - payloadIndex;
+                    b.writerIndex(payloadSizeIndex);
+                    b.writeInt(length);
+                    b.writerIndex(payloadIndex + length);
                 });
     }
 
     /**
      * Get the list of SMR updates for a particular object.
+     *
      * @param id StreamID
      * @return an empty list if object has no updates; a list of updates if exists
      */
     @Override
-    public List<SMREntry> getSMRUpdates(UUID id) {
-        MultiSMREntry entry = entryMap.get(id);
-        return entryMap.get(id) == null ? Collections.emptyList() :
-                entry.getUpdates();
+    public synchronized List<SMREntry> getSMRUpdates(UUID id) {
+        MultiSMREntry entry = streamUpdates.get(id);
+
+        if (entry != null) {
+            return entry.getUpdates();
+        }
+
+        if (streamBuffers.containsKey(id)) {
+            byte[] streamUpdatesBuf = streamBuffers.get(id);
+            ByteBuf buf = Unpooled.wrappedBuffer(streamUpdatesBuf);
+            int numUpdates = buf.readInt();
+            List<SMREntry> smrEntries = new ArrayList<>(numUpdates);
+            for (int update = 0; update < numUpdates; update++) {
+                smrEntries.add((SMREntry) Serializers.CORFU.deserialize(buf, null));
+            }
+
+            smrEntries.stream().forEach(x -> x.setGlobalAddress(getGlobalAddress()));
+
+            streamUpdates.put(id, new MultiSMREntry(smrEntries));
+            streamBuffers.remove(id);
+            return smrEntries;
+        }
+
+        return Collections.emptyList();
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    public void setGlobalAddress(long address) {
+    public synchronized void setGlobalAddress(long address) {
         super.setGlobalAddress(address);
-        this.getEntryMap().values().forEach(x -> {
-            x.setGlobalAddress(address);
-        });
+        streamUpdates.values().forEach(x -> x.setGlobalAddress(address));
+    }
+
+    public synchronized Map<UUID, MultiSMREntry> getEntryMap() {
+        // Deserialize all streams
+        for (UUID id : new HashSet<>(streamBuffers.keySet())) {
+            getSMRUpdates(id);
+        }
+
+        return this.streamUpdates;
     }
 }
