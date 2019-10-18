@@ -705,7 +705,7 @@ public class SequencerServer extends AbstractServer {
     @Builder
     @Getter
     public static class Config {
-        private static final long DEFAULT_CACHE_SIZE = 250_000L;
+        private static final long DEFAULT_CACHE_SIZE = 5_000_000L;
 
         private final long initialToken;
         @Default
