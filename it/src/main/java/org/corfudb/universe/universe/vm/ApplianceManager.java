@@ -147,7 +147,8 @@ public class ApplianceManager {
                         universeParams.getTemplateVMName()
                 );
 
-                log.info("Deploying the VM {} via vSphere {}...", vmName, universeParams.getVSphereUrl());
+                log.info("Deploying the VM {} via vSphere {}...",
+                        vmName, universeParams.getVSphereUrl());
 
                 ImmutableMap<String, String> props = Maps
                         .fromProperties(VmConfigFileUtil.loadVmProperties());
